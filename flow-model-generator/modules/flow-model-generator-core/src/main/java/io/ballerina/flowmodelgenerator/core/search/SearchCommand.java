@@ -74,6 +74,7 @@ public abstract class SearchCommand {
             case CLASS_INIT -> new ClassInitSearchCommand(module, position,
                     queryMap); // This is a temporary implementation, to support ballerinax/ai usage
             case MEMORY_MANAGER -> new MemoryManagerSearchCommand(module, position, queryMap);
+            case AGENT_TOOL -> new AgentToolSearchCommand(module, position, queryMap);
         };
     }
 
@@ -186,6 +187,7 @@ public abstract class SearchCommand {
         VECTOR_STORE,
         AGENT,
         CLASS_INIT,
-        MEMORY_MANAGER
+        MEMORY_MANAGER,
+        AGENT_TOOL
     }
 }
