@@ -50,11 +50,10 @@ public class ClassInitSearchCommand extends SearchCommand {
     @Override
     protected List<Item> search() {
         List<Item> classInits = getClassInits();
-        if (classInits.isEmpty()) {
+        if (classInits.isEmpty() || !(classInits.getFirst() instanceof Category classInitCategory)) {
             return classInits;
         }
 
-        Category classInitCategory = (Category) classInits.getFirst();
         List<Item> models = classInitCategory.items();
 
         List<Item> matchings = models.stream()

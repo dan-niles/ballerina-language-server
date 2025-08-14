@@ -56,11 +56,10 @@ public class AgentSearchCommand extends SearchCommand {
     @Override
     protected List<Item> search() {
         List<Item> agents = getAgents();
-        if (agents.isEmpty()) {
+        if (agents.isEmpty() || !(agents.getFirst() instanceof Category agentCategory)) {
             return agents;
         }
 
-        Category agentCategory = (Category) agents.getFirst();
         List<Item> stores = agentCategory.items();
         List<Item> matchingStores = stores.stream()
                 .filter(item -> item instanceof AvailableNode availableNode &&

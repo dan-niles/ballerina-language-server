@@ -55,11 +55,10 @@ public class MemoryManagerSearchCommand extends SearchCommand {
     @Override
     protected List<Item> search() {
         List<Item> memoryManagers = getMemoryManagers();
-        if (memoryManagers.isEmpty()) {
+        if (memoryManagers.isEmpty() || !(memoryManagers.getFirst() instanceof Category memoryManagerCategory)) {
             return memoryManagers;
         }
 
-        Category memoryManagerCategory = (Category) memoryManagers.getFirst();
         List<Item> stores = memoryManagerCategory.items();
 
         List<Item> matchingStores = stores.stream()

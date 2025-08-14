@@ -118,69 +118,73 @@ public class AgentToolSearchCommand extends SearchCommand {
     }
 
     private List<Item> buildAgentToolNodes() {
-        Package currentPackage = project.currentPackage();
-        List<Symbol> functionSymbols = PackageUtil.getCompilation(currentPackage)
-                .getSemanticModel(currentPackage.getDefaultModule().moduleId())
-                .moduleSymbols().stream()
-                .filter(symbol -> symbol.kind().equals(SymbolKind.FUNCTION))
-                .toList();
+        try {
+            Package currentPackage = project.currentPackage();
+            List<Symbol> functionSymbols = PackageUtil.getCompilation(currentPackage)
+                    .getSemanticModel(currentPackage.getDefaultModule().moduleId())
+                    .moduleSymbols().stream()
+                    .filter(symbol -> symbol.kind().equals(SymbolKind.FUNCTION))
+                    .toList();
 
-        Category.Builder agentToolsBuilder = rootBuilder.stepIn(Category.Name.AGENT_TOOLS);
-        List<Item> agentToolNodes = new ArrayList<>();
+            Category.Builder agentToolsBuilder = rootBuilder.stepIn(Category.Name.AGENT_TOOLS);
+            List<Item> agentToolNodes = new ArrayList<>();
 
-        for (Symbol symbol : functionSymbols) {
-            FunctionSymbol functionSymbol = (FunctionSymbol) symbol;
+            for (Symbol symbol : functionSymbols) {
+                FunctionSymbol functionSymbol = (FunctionSymbol) symbol;
 
-            // Check if function is an agent tool
-            if (!isAgentTool(functionSymbol)) {
-                continue;
-            }
-
-            // Skip if function is within current position (editing context)
-            Optional<Location> location = symbol.getLocation();
-            if (location.isPresent()) {
-                LineRange fnLineRange = location.get().lineRange();
-                if (fnLineRange.fileName().equals(position.fileName()) &&
-                        PositionUtil.isWithinLineRange(fnLineRange, position)) {
+                // Check if function is an agent tool
+                if (!isAgentTool(functionSymbol)) {
                     continue;
                 }
+
+                // Skip if function is within current position (editing context)
+                Optional<Location> location = symbol.getLocation();
+                if (location.isPresent()) {
+                    LineRange fnLineRange = location.get().lineRange();
+                    if (fnLineRange.fileName().equals(position.fileName()) &&
+                            PositionUtil.isWithinLineRange(fnLineRange, position)) {
+                        continue;
+                    }
+                }
+
+                // Filter by query if provided
+                if (symbol.getName().isEmpty() ||
+                        (!query.isEmpty() && !symbol.getName().get().toLowerCase(Locale.ROOT)
+                                .contains(query.toLowerCase(Locale.ROOT)))) {
+                    continue;
+                }
+
+                boolean isIsolatedFunction = functionSymbol.qualifiers().contains(Qualifier.ISOLATED);
+                Metadata metadata = new Metadata.Builder<>(null)
+                        .label(symbol.getName().get())
+                        .description(functionSymbol.documentation()
+                                .flatMap(Documentation::description)
+                                .orElse("Agent tool function"))
+                        .addData("isAgentTool", true)
+                        .addData("isIsolatedFunction", isIsolatedFunction)
+                        .build();
+
+                Codedata.Builder<Object> codedataBuilder = new Codedata.Builder<>(null)
+                        .node(NodeKind.FUNCTION_CALL)
+                        .symbol(symbol.getName().get());
+
+                Optional<ModuleSymbol> moduleSymbol = functionSymbol.getModule();
+                if (moduleSymbol.isPresent()) {
+                    ModuleID id = moduleSymbol.get().id();
+                    codedataBuilder
+                            .org(id.orgName())
+                            .module(id.packageName())
+                            .version(id.version());
+                }
+
+                agentToolNodes.add(new AvailableNode(metadata, codedataBuilder.build(), true));
             }
 
-            // Filter by query if provided
-            if (symbol.getName().isEmpty() ||
-                    (!query.isEmpty() && !symbol.getName().get().toLowerCase(Locale.ROOT)
-                            .contains(query.toLowerCase(Locale.ROOT)))) {
-                continue;
-            }
-
-            boolean isIsolatedFunction = functionSymbol.qualifiers().contains(Qualifier.ISOLATED);
-            Metadata metadata = new Metadata.Builder<>(null)
-                    .label(symbol.getName().get())
-                    .description(functionSymbol.documentation()
-                            .flatMap(Documentation::description)
-                            .orElse("Agent tool function"))
-                    .addData("isAgentTool", true)
-                    .addData("isIsolatedFunction", isIsolatedFunction)
-                    .build();
-
-            Codedata.Builder<Object> codedataBuilder = new Codedata.Builder<>(null)
-                    .node(NodeKind.FUNCTION_CALL)
-                    .symbol(symbol.getName().get());
-
-            Optional<ModuleSymbol> moduleSymbol = functionSymbol.getModule();
-            if (moduleSymbol.isPresent()) {
-                ModuleID id = moduleSymbol.get().id();
-                codedataBuilder
-                        .org(id.orgName())
-                        .module(id.packageName())
-                        .version(id.version());
-            }
-
-            agentToolNodes.add(new AvailableNode(metadata, codedataBuilder.build(), true));
+            agentToolsBuilder.items(agentToolNodes);
+            return rootBuilder.build().items();
+        } catch (Exception e) {
+            return Collections.emptyList();
         }
-
-        agentToolsBuilder.items(agentToolNodes);
-        return rootBuilder.build().items();
     }
 
     private boolean isAgentTool(FunctionSymbol functionSymbol) {
