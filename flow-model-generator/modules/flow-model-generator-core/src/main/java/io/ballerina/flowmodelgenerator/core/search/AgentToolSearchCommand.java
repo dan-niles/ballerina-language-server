@@ -85,12 +85,13 @@ public class AgentToolSearchCommand extends SearchCommand {
 
         Category agentToolCategory = (Category) agentTools.getFirst();
         List<Item> tools = agentToolCategory.items();
+        String lowerCaseQuery = query == null ? null : query.toLowerCase();
         List<Item> matchingTools = tools.stream()
                 .filter(item -> item instanceof AvailableNode availableNode &&
-                        (query == null ||
-                                availableNode.metadata().label().toLowerCase().contains(query.toLowerCase()) ||
-                                availableNode.codedata().symbol().toLowerCase().contains(query.toLowerCase()) ||
-                                availableNode.metadata().description().toLowerCase().contains(query.toLowerCase())))
+                        (lowerCaseQuery == null ||
+                                availableNode.metadata().label().toLowerCase().contains(lowerCaseQuery) ||
+                                availableNode.codedata().symbol().toLowerCase().contains(lowerCaseQuery) ||
+                                availableNode.metadata().description().toLowerCase().contains(lowerCaseQuery)))
                 .toList();
 
         tools.clear();
@@ -128,6 +129,7 @@ public class AgentToolSearchCommand extends SearchCommand {
 
             Category.Builder agentToolsBuilder = rootBuilder.stepIn(Category.Name.AGENT_TOOLS);
             List<Item> agentToolNodes = new ArrayList<>();
+            String lowerCaseQuery = query.isEmpty() ? null : query.toLowerCase(Locale.ROOT);
 
             for (Symbol symbol : functionSymbols) {
                 FunctionSymbol functionSymbol = (FunctionSymbol) symbol;
@@ -149,8 +151,8 @@ public class AgentToolSearchCommand extends SearchCommand {
 
                 // Filter by query if provided
                 if (symbol.getName().isEmpty() ||
-                        (!query.isEmpty() && !symbol.getName().get().toLowerCase(Locale.ROOT)
-                                .contains(query.toLowerCase(Locale.ROOT)))) {
+                        (lowerCaseQuery != null && !symbol.getName().get().toLowerCase(Locale.ROOT)
+                                .contains(lowerCaseQuery))) {
                     continue;
                 }
 
