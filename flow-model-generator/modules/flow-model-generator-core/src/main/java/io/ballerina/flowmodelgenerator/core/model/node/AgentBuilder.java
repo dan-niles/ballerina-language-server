@@ -19,6 +19,12 @@
 package io.ballerina.flowmodelgenerator.core.model.node;
 
 import io.ballerina.compiler.syntax.tree.SyntaxKind;
+import io.ballerina.flowmodelgenerator.core.LocalIndexCentral;
+import io.ballerina.flowmodelgenerator.core.model.AvailableNode;
+import io.ballerina.flowmodelgenerator.core.model.Category;
+import io.ballerina.flowmodelgenerator.core.model.FlowNode;
+import io.ballerina.flowmodelgenerator.core.model.Item;
+import io.ballerina.flowmodelgenerator.core.model.NodeBuilder;
 import io.ballerina.flowmodelgenerator.core.model.NodeKind;
 import io.ballerina.flowmodelgenerator.core.model.Property;
 import io.ballerina.flowmodelgenerator.core.model.SourceBuilder;
@@ -26,10 +32,13 @@ import io.ballerina.modelgenerator.commons.FunctionData;
 import org.eclipse.lsp4j.TextEdit;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+
+import static io.ballerina.flowmodelgenerator.core.Constants.DEFAULT_MODEL_PROVIDER;
 
 /**
  * Represents agent node in the flow model.
@@ -40,6 +49,7 @@ public class AgentBuilder extends CallBuilder {
 
     private static final String AGENT_LABEL = "Agent";
     private FunctionData.Kind functionKind = FunctionData.Kind.CONNECTOR;
+
     public static final String PARAMS_TO_HIDE = "paramsToHide";
     public static final String MODEL = "model";
     public static final String TYPE = "type";
@@ -66,6 +76,8 @@ public class AgentBuilder extends CallBuilder {
     public static final String DESCRIPTION = "Create new agent";
     public static final String BALLERINA = "ballerina";
 
+    private Map<Path, List<TextEdit>> modelProviderTextEdits;
+
     @Override
     protected NodeKind getFunctionNodeKind() {
         return NodeKind.AGENT;
@@ -84,9 +96,8 @@ public class AgentBuilder extends CallBuilder {
 
     @Override
     public Map<Path, List<TextEdit>> toSource(SourceBuilder sourceBuilder) {
-        // Modify property values before generating source
         modifyAgentProperties(sourceBuilder);
-        
+
         sourceBuilder
                 .token().keyword(SyntaxKind.FINAL_KEYWORD).stepOut()
                 .newVariable();
@@ -98,78 +109,16 @@ public class AgentBuilder extends CallBuilder {
                 .functionParameters(sourceBuilder.flowNode, Set.of(Property.VARIABLE_KEY, Property.TYPE_KEY,
                         Property.SCOPE_KEY, Property.CHECK_ERROR_KEY, NAME, ROLE, INSTRUCTION), true);
 
-        return sourceBuilder.textEdit().acceptImport().build();
-    }
+        Map<Path, List<TextEdit>> result = sourceBuilder.textEdit().acceptImport().build();
 
-    private void modifyAgentProperties(SourceBuilder sourceBuilder) {
-        Map<String, Property> properties = sourceBuilder.flowNode.properties();
-        if (properties == null) {
-            return;
+        if (modelProviderTextEdits != null) {
+            Map<Path, List<TextEdit>> combinedResult = new LinkedHashMap<>();
+            combinedResult.putAll(modelProviderTextEdits);
+            combinedResult.putAll(result);
+            result = combinedResult;
         }
-        
-        // Create systemPrompt from role and instruction
-        Optional<Property> roleProperty = sourceBuilder.getProperty(ROLE);
-        Optional<Property> instructionProperty = sourceBuilder.getProperty(INSTRUCTION);
-        if (roleProperty.isPresent() && instructionProperty.isPresent() && 
-            roleProperty.get().value() != null && instructionProperty.get().value() != null) {
-            
-            String role = roleProperty.get().value().toString();
-            String instruction = instructionProperty.get().value().toString();
-            String systemPromptValue = String.format("{role: \"%s\", instructions: \"%s\"}", role, instruction);
-            
-            // Update systemPrompt property
-            Property systemPromptProperty = properties.get(SYSTEM_PROMPT);
-            if (systemPromptProperty != null) {
-                Property newSystemPrompt = new Property(
-                    systemPromptProperty.metadata(),
-                    systemPromptProperty.valueType(),
-                    systemPromptProperty.valueTypeConstraint(),
-                    systemPromptValue,
-                    systemPromptProperty.oldValue(),
-                    systemPromptProperty.placeholder(),
-                    systemPromptProperty.optional(),
-                    systemPromptProperty.editable(),
-                    systemPromptProperty.advanced(),
-                    systemPromptProperty.hidden(),
-                    systemPromptProperty.modified(),
-                    systemPromptProperty.diagnostics(),
-                    systemPromptProperty.codedata(),
-                    systemPromptProperty.typeMembers(),
-                    systemPromptProperty.advancedValue(),
-                    systemPromptProperty.imports(),
-                    systemPromptProperty.defaultValue(),
-                    systemPromptProperty.comment()
-                );
-                properties.put(SYSTEM_PROMPT, newSystemPrompt);
-            }
-        }
-        
-        // Set default values for tools and memory if they're empty
-        Property toolsProperty = properties.get(TOOLS);
-        if (toolsProperty != null && (toolsProperty.value() == null || toolsProperty.value().toString().isEmpty())) {
-            Property newTools = new Property(
-                toolsProperty.metadata(), toolsProperty.valueType(), toolsProperty.valueTypeConstraint(),
-                "[]", toolsProperty.oldValue(), toolsProperty.placeholder(), toolsProperty.optional(),
-                toolsProperty.editable(), toolsProperty.advanced(), toolsProperty.hidden(),
-                toolsProperty.modified(), toolsProperty.diagnostics(), toolsProperty.codedata(),
-                toolsProperty.typeMembers(), toolsProperty.advancedValue(), toolsProperty.imports(),
-                toolsProperty.defaultValue(), toolsProperty.comment()
-            );
-            properties.put(TOOLS, newTools);
-        }
-        
-        Property memoryProperty = properties.get(MEMORY);
-        if (memoryProperty != null && (memoryProperty.value() == null || memoryProperty.value().toString().isEmpty())) {
-            Property newMemory = new Property(
-                memoryProperty.metadata(), memoryProperty.valueType(), memoryProperty.valueTypeConstraint(),
-                "()", memoryProperty.oldValue(), memoryProperty.placeholder(), memoryProperty.optional(),
-                memoryProperty.editable(), memoryProperty.advanced(), memoryProperty.hidden(),
-                memoryProperty.modified(), memoryProperty.diagnostics(), memoryProperty.codedata(),
-                memoryProperty.typeMembers(), memoryProperty.advancedValue(), memoryProperty.imports(),
-                memoryProperty.defaultValue(), memoryProperty.comment()
-            );
-            properties.put(MEMORY, newMemory);
-        }
+
+        return result;
     }
 
     @Override
@@ -215,5 +164,150 @@ public class AgentBuilder extends CallBuilder {
                 .addProperty(INSTRUCTION);
 
         metadata().addData(PARAMS_TO_HIDE, List.of(MODEL, TOOLS, TYPE, MEMORY, SYSTEM_PROMPT, CHECK_ERROR));
+    }
+
+    private void modifyAgentProperties(SourceBuilder sourceBuilder) {
+        Map<String, Property> properties = sourceBuilder.flowNode.properties();
+        if (properties == null) {
+            return;
+        }
+
+        // Create systemPrompt from role and instruction
+        updateSystemPromptProperty(sourceBuilder, properties);
+
+        // Set default values for tools and memory if they're empty
+        setDefaultIfEmpty(properties, TOOLS, "[]");
+        setDefaultIfEmpty(properties, MEMORY, "()");
+
+        // Create default model parameter if not provided
+        Optional<Property> modelProperty = sourceBuilder.getProperty(MODEL);
+        if (modelProperty.isEmpty()) {
+            createDefaultModelParameter(sourceBuilder, properties);
+        }
+    }
+
+    private void updateSystemPromptProperty(SourceBuilder sourceBuilder, Map<String, Property> properties) {
+        Optional<Property> roleProperty = sourceBuilder.getProperty(ROLE);
+        Optional<Property> instructionProperty = sourceBuilder.getProperty(INSTRUCTION);
+        if (roleProperty.isPresent() && instructionProperty.isPresent() &&
+                roleProperty.get().value() != null && instructionProperty.get().value() != null) {
+
+            String role = roleProperty.get().value().toString();
+            String instruction = instructionProperty.get().value().toString();
+            String systemPromptValue = String.format("{role: \"%s\", instructions: \"%s\"}", role, instruction);
+
+            Property systemPromptProperty = properties.get(SYSTEM_PROMPT);
+            if (systemPromptProperty != null) {
+                properties.put(SYSTEM_PROMPT, withNewValue(systemPromptProperty, systemPromptValue));
+            }
+        }
+    }
+
+    private void createDefaultModelParameter(SourceBuilder sourceBuilder, Map<String, Property> properties) {
+        Property modelProperty = properties.get(MODEL);
+        if (modelProperty != null && (modelProperty.value() == null || modelProperty.value().toString().isEmpty())) {
+            String defaultModelValue = findAndCreateDefaultModelProvider(sourceBuilder);
+            properties.put(MODEL, withNewValue(modelProperty, defaultModelValue));
+        }
+    }
+
+    private String findAndCreateDefaultModelProvider(SourceBuilder sourceBuilder) {
+        List<Item> modelProviders = LocalIndexCentral.getInstance().getModelProviders();
+        AvailableNode defaultModelProviderNode = getDefaultModelProviderNode(modelProviders);
+
+        try {
+            NodeBuilder.TemplateContext context = new NodeBuilder.TemplateContext(
+                    sourceBuilder.workspaceManager,
+                    sourceBuilder.filePath,
+                    null,
+                    defaultModelProviderNode.codedata(),
+                    null
+            );
+
+            ModelProviderBuilder modelBuilder = new ModelProviderBuilder();
+            modelBuilder.setConcreteTemplateData(context);
+            FlowNode modelProviderNode = modelBuilder.build();
+            generateModelProviderSourceCode(sourceBuilder, modelProviderNode);
+
+            return modelProviderNode.properties().get(Property.VARIABLE_KEY).value().toString();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create model provider: " + e.getMessage(), e);
+        }
+    }
+
+    private static AvailableNode getDefaultModelProviderNode(List<Item> modelProviders) {
+        AvailableNode defaultModelProviderNode = null;
+        for (Item item : modelProviders) {
+            if (item instanceof Category category) {
+                for (Item categoryItem : category.items()) {
+                    if (categoryItem instanceof AvailableNode modelNode) {
+                        if ("OpenAiProvider".equals(modelNode.codedata().object()) ||
+                                DEFAULT_MODEL_PROVIDER.equals(modelNode.codedata().symbol())) {
+                            defaultModelProviderNode = modelNode;
+                            break;
+                        }
+                    }
+                }
+                if (defaultModelProviderNode != null) break;
+            }
+        }
+
+        if (defaultModelProviderNode == null) {
+            throw new RuntimeException("Default model provider not found.");
+        }
+        return defaultModelProviderNode;
+    }
+
+    private void generateModelProviderSourceCode(SourceBuilder sourceBuilder, FlowNode modelProviderNode) {
+        try {
+            ModelProviderBuilder modelBuilder = new ModelProviderBuilder();
+            NodeBuilder.TemplateContext context = new NodeBuilder.TemplateContext(
+                    sourceBuilder.workspaceManager,
+                    sourceBuilder.filePath,
+                    null,
+                    modelProviderNode.codedata(),
+                    null
+            );
+            modelBuilder.setConcreteTemplateData(context);
+
+            Path projectRoot = sourceBuilder.workspaceManager.projectRoot(sourceBuilder.filePath);
+            SourceBuilder modelSourceBuilder =
+                    new SourceBuilder(modelProviderNode, sourceBuilder.workspaceManager, projectRoot);
+
+            this.modelProviderTextEdits = modelBuilder.toSource(modelSourceBuilder);
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "Failed to generate model provider source code during agent creation: " + e.getMessage(), e);
+        }
+    }
+
+    private void setDefaultIfEmpty(Map<String, Property> properties, String key, String defaultValue) {
+        Property property = properties.get(key);
+        if (property != null && (property.value() == null || property.value().toString().isEmpty())) {
+            properties.put(key, withNewValue(property, defaultValue));
+        }
+    }
+
+    private Property withNewValue(Property property, Object newValue) {
+        return new Property(
+                property.metadata(),
+                property.valueType(),
+                property.valueTypeConstraint(),
+                newValue,
+                property.oldValue(),
+                property.placeholder(),
+                property.optional(),
+                property.editable(),
+                property.advanced(),
+                property.hidden(),
+                property.modified(),
+                property.diagnostics(),
+                property.codedata(),
+                property.typeMembers(),
+                property.advancedValue(),
+                property.imports(),
+                property.defaultValue(),
+                property.comment()
+        );
     }
 }
