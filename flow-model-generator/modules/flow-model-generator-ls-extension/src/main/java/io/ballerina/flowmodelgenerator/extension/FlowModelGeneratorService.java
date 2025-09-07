@@ -44,6 +44,7 @@ import io.ballerina.flowmodelgenerator.extension.request.ComponentDeleteRequest;
 import io.ballerina.flowmodelgenerator.extension.request.CopilotContextRequest;
 import io.ballerina.flowmodelgenerator.extension.request.EnclosedFuncDefRequest;
 import io.ballerina.flowmodelgenerator.extension.request.FilePathRequest;
+import io.ballerina.flowmodelgenerator.extension.request.FlowModelAvailableItemsByCategoryRequest;
 import io.ballerina.flowmodelgenerator.extension.request.FlowModelAvailableNodesRequest;
 import io.ballerina.flowmodelgenerator.extension.request.FlowModelGeneratorRequest;
 import io.ballerina.flowmodelgenerator.extension.request.FlowModelNodeTemplateRequest;
@@ -353,8 +354,41 @@ public class FlowModelGeneratorService implements ExtendedLanguageServerService 
                 generator -> generator.getAvailableModelProviders(request.position()));
     }
 
+    @JsonRequest
+    public CompletableFuture<FlowModelAvailableNodesResponse> getAvailableItemsByCategory(
+            FlowModelAvailableItemsByCategoryRequest request) {
+        return handleAvailableItemsByCategoryRequest(request,
+                generator -> generator.getAvailableItemsByCategory(request.position(), request.categoryName()));
+    }
+
     private CompletableFuture<FlowModelAvailableNodesResponse> handleAvailableNodesRequest(
             FlowModelAvailableNodesRequest request,
+            Function<AvailableNodesGenerator, JsonArray> categoryProvider) {
+
+        return CompletableFuture.supplyAsync(() -> {
+            FlowModelAvailableNodesResponse response = new FlowModelAvailableNodesResponse();
+            try {
+                Path filePath = Path.of(request.filePath());
+                WorkspaceManager workspaceManager = this.workspaceManagerProxy.get();
+                Project project = workspaceManager.loadProject(filePath);
+                Optional<SemanticModel> semanticModel = workspaceManager.semanticModel(filePath);
+                Optional<Document> document = workspaceManager.document(filePath);
+                if (semanticModel.isEmpty() || document.isEmpty()) {
+                    return response;
+                }
+
+                AvailableNodesGenerator generator = new AvailableNodesGenerator(semanticModel.get(),
+                        document.get(), project.currentPackage());
+                response.setCategories(categoryProvider.apply(generator));
+            } catch (Throwable e) {
+                response.setError(e);
+            }
+            return response;
+        });
+    }
+
+    private CompletableFuture<FlowModelAvailableNodesResponse> handleAvailableItemsByCategoryRequest(
+            FlowModelAvailableItemsByCategoryRequest request,
             Function<AvailableNodesGenerator, JsonArray> categoryProvider) {
 
         return CompletableFuture.supplyAsync(() -> {

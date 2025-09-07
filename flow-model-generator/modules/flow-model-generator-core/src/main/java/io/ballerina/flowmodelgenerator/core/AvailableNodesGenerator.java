@@ -60,6 +60,7 @@ import io.ballerina.tools.text.TextRange;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -89,12 +90,23 @@ public class AvailableNodesGenerator {
             "delete", "patch", "options");
     private static final String BALLERINAX = "ballerinax";
 
+    private final Map<Category.Name, Function<Symbol, Optional<Category>>> categoryTransformers;
+
     public AvailableNodesGenerator(SemanticModel semanticModel, Document document, Package pkg) {
         this.rootBuilder = new Category.Builder(null).name(Category.Name.ROOT);
         this.gson = new Gson();
         this.semanticModel = semanticModel;
         this.document = document;
         this.pkg = pkg;
+        this.categoryTransformers = Map.of(
+                Category.Name.AGENTS, this::getAgent,
+                Category.Name.MODEL_PROVIDER, this::getModelProvider,
+                Category.Name.EMBEDDING_PROVIDER, this::getEmbeddingProvider,
+                Category.Name.VECTOR_STORE, this::getVectorStore,
+                Category.Name.VECTOR_KNOWLEDGE_BASE, this::getKnowledgeBase,
+                Category.Name.DATA_LOADER, this::getDataLoader,
+                Category.Name.CHUNKER, this::getChunkers
+        );
     }
 
     public JsonArray getAvailableNodes(boolean disableBallerinaAiNodes, LinePosition position) {
@@ -142,6 +154,17 @@ public class AvailableNodesGenerator {
 
     public JsonArray getAvailableChunkers(LinePosition position) {
         return this.getAvailableItemsByCategory(position, Category.Name.CHUNKER, this::getChunkers);
+    }
+
+    public JsonArray getAvailableItemsByCategory(LinePosition position, Category.Name categoryName) {
+        if (categoryName == null) {
+            throw new IllegalArgumentException("Category name cannot be null");
+        }
+        Function<Symbol, Optional<Category>> transformer = categoryTransformers.get(categoryName);
+        if (transformer == null) {
+            throw new IllegalArgumentException("Unknown category: " + categoryName);
+        }
+        return this.getAvailableItemsByCategory(position, categoryName, transformer);
     }
 
     private JsonArray getAvailableItemsByCategory(LinePosition position, Category.Name categoryName,
@@ -311,6 +334,11 @@ public class AvailableNodesGenerator {
                 .items(List.of(vectorKnowledgeBase, dataLoaders, recursiveDocumentChunker, chunkers, augmentUserQuery,
                         vectorStore, embeddingProvider)).build();
 
+        AvailableNode agents = new AvailableNode(
+                new Metadata.Builder<>(null).label(AgentBuilder.LABEL)
+                        .description(AgentBuilder.DESCRIPTION).build(),
+                new Codedata.Builder<>(null).node(NodeKind.AGENTS).build(), !disableBallerinaAiNodes);
+
         AvailableNode agentCall = new AvailableNode(
                 new Metadata.Builder<>(null).label(AgentBuilder.LABEL)
                         .description(AgentBuilder.DESCRIPTION).build(),
@@ -320,7 +348,7 @@ public class AvailableNodesGenerator {
                         .object(Ai.AGENT_TYPE_NAME).build(), true);
 
         Category agentCategory = new Category.Builder(null).name(Category.Name.AGENT)
-                .items(List.of(agentCall)).build();
+                .items(List.of(agents)).build();
 
         return List.of(directLlmCategory, ragCategory, agentCategory);
     }
@@ -470,5 +498,15 @@ public class AvailableNodesGenerator {
 
     private Optional<Category> getChunkers(Symbol symbol) {
         return getCategory(symbol, CommonUtils::isAiChunker);
+    }
+
+    private Optional<Category> getAgent(Symbol symbol) {
+        return getCategory(symbol, classSymbol -> {
+            try {
+                return classSymbol.getName().orElse("").equals(Ai.AGENT_TYPE_NAME);
+            } catch (Exception e) {
+                return false;
+            }
+        });
     }
 }

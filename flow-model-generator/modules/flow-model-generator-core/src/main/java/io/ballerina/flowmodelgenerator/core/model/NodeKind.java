@@ -78,6 +78,7 @@ public enum NodeKind {
     TUPLE,
 
     AGENT,
+    AGENTS,
     AGENT_CALL,
     CLASS_INIT,
 
