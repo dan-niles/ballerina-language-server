@@ -107,7 +107,7 @@ public class AgentBuilder extends CallBuilder {
                 .keyword(SyntaxKind.NEW_KEYWORD)
                 .stepOut()
                 .functionParameters(sourceBuilder.flowNode, Set.of(Property.VARIABLE_KEY, Property.TYPE_KEY,
-                        Property.SCOPE_KEY, Property.CHECK_ERROR_KEY, NAME, ROLE, INSTRUCTION), true);
+                        Property.SCOPE_KEY, Property.CHECK_ERROR_KEY, ROLE, INSTRUCTION), true);
 
         Map<Path, List<TextEdit>> result = sourceBuilder.textEdit().acceptImport().build();
 
@@ -131,15 +131,15 @@ public class AgentBuilder extends CallBuilder {
         }
         super.setConcreteTemplateData(context);
 
-        properties().custom()
-                .metadata()
-                    .label(NAME_LABEL)
-                    .description(NAME_DOC)
-                    .stepOut()
-                .type(Property.ValueType.IDENTIFIER)
-                .editable()
-                .stepOut()
-                .addProperty(NAME);
+//        properties().custom()
+//                .metadata()
+//                    .label(NAME_LABEL)
+//                    .description(NAME_DOC)
+//                    .stepOut()
+//                .type(Property.ValueType.IDENTIFIER)
+//                .editable()
+//                .stepOut()
+//                .addProperty(NAME);
 
         properties().custom()
                 .metadata()
@@ -181,7 +181,7 @@ public class AgentBuilder extends CallBuilder {
 
         // Create default model parameter if not provided
         Optional<Property> modelProperty = sourceBuilder.getProperty(MODEL);
-        if (modelProperty.isEmpty()) {
+        if (modelProperty.isPresent() && modelProperty.get().value() == null) {
             createDefaultModelParameter(sourceBuilder, properties);
         }
     }
