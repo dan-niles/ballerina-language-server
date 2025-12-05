@@ -19,6 +19,7 @@
 package io.ballerina.flowmodelgenerator.core.model.node;
 
 import io.ballerina.compiler.syntax.tree.SyntaxKind;
+import io.ballerina.flowmodelgenerator.core.Constants;
 import io.ballerina.flowmodelgenerator.core.model.Codedata;
 import io.ballerina.flowmodelgenerator.core.model.NodeKind;
 import io.ballerina.flowmodelgenerator.core.model.Property;
@@ -40,6 +41,7 @@ import java.util.Set;
  * @since 1.1.1
  */
 public class ChunkerBuilder extends CallBuilder {
+
     public static final String LABEL = "Chunker";
     public static final String DESCRIPTION = "Chunkers available in the integration";
 
@@ -71,8 +73,12 @@ public class ChunkerBuilder extends CallBuilder {
             sourceBuilder.token().keyword(SyntaxKind.CHECK_KEYWORD);
 
         }
-        return sourceBuilder.token().keyword(SyntaxKind.NEW_KEYWORD).stepOut()
-                .functionParameters(sourceBuilder.flowNode,
+        if (sourceBuilder.flowNode.codedata().symbol().equals(Constants.Ai.GET_DEFAULT_DEVANT_CHUNKER_METHOD)) {
+            sourceBuilder.token().name(methodCallWithModulePrefix(sourceBuilder));
+        } else {
+            sourceBuilder.token().keyword(SyntaxKind.NEW_KEYWORD);
+        }
+        return sourceBuilder.functionParameters(sourceBuilder.flowNode,
                         Set.of(Property.VARIABLE_KEY, Property.TYPE_KEY, Property.SCOPE_KEY, Property.CHECK_ERROR_KEY))
                 .textEdit().acceptImport().build();
     }
@@ -95,6 +101,10 @@ public class ChunkerBuilder extends CallBuilder {
                 .packageName(functionData.packageName()).object(functionData.name())
                 .version(functionData.version());
 
+        if (!functionData.name().equals(Constants.Ai.GET_DEFAULT_DEVANT_CHUNKER_METHOD)) {
+            codedata().object(functionData.name());
+        }
+
         if (CommonUtils.hasReturn(functionData.returnType())) {
             setReturnTypeProperties(functionData, context, CHUNKER_NAME_LABEL,
                     CHUNKER_NAME_LABEL_DOC, false);
@@ -102,4 +112,11 @@ public class ChunkerBuilder extends CallBuilder {
         setParameterProperties(functionData);
         properties().scope(Property.GLOBAL_SCOPE).checkError(true, CHECK_ERROR_DOC, false);
     }
+
+    private static String methodCallWithModulePrefix(SourceBuilder sourceBuilder) {
+        String module = sourceBuilder.flowNode.codedata().module();
+        String methodCallPrefix = (module != null) ? module.substring(module.lastIndexOf('.') + 1) + ":" : "";
+        return methodCallPrefix + Constants.Ai.GET_DEFAULT_DEVANT_CHUNKER_METHOD;
+    }
+
 }

@@ -120,8 +120,10 @@ public class Constants {
         public static final String DATA_LOADER_TYPE_NAME = "DataLoader";
         public static final String WSO2_MODEL_PROVIDER_NAME = "Wso2ModelProvider";
         public static final String WSO2_EMBEDDING_PROVIDER_NAME = "Wso2EmbeddingProvider";
+        public static final String DEVANT_CHUNKER_NAME = "DevantChunker";
         public static final String GET_DEFAULT_MODEL_PROVIDER_METHOD = "getDefaultModelProvider";
         public static final String GET_DEFAULT_EMBEDDING_PROVIDER_METHOD = "getDefaultEmbeddingProvider";
+        public static final String GET_DEFAULT_DEVANT_CHUNKER_METHOD = "getDefaultDevantChunker";
         public static final String OPEN_AI_PROVIDER = "OpenAiProvider";
 
         public static final String AGENT_CODEDATA = "agentCodedata";
