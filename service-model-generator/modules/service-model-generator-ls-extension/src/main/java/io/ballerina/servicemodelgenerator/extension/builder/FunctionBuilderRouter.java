@@ -71,6 +71,7 @@ import static io.ballerina.servicemodelgenerator.extension.util.ServiceModelUtil
  * @since 1.2.0
  */
 public class FunctionBuilderRouter {
+
     private static final Map<String, Supplier<? extends NodeBuilder<Function>>> CONSTRUCTOR_MAP = new HashMap<>() {{
         put(HTTP, HttpFunctionBuilder::new);
         put(GRAPHQL, GraphqlFunctionBuilder::new);
@@ -87,9 +88,12 @@ public class FunctionBuilderRouter {
         return CONSTRUCTOR_MAP.getOrDefault(protocol, DefaultFunctionBuilder::new).get();
     }
 
-    public static Optional<Function> getModelTemplate(String moduleName, String functionType) {
+    public static Optional<Function> getModelTemplate(String moduleName, String functionType,
+                                                      String projectPath,
+                                                      WorkspaceManager workspaceManager) {
         NodeBuilder<Function> functionBuilder = getFunctionBuilder(moduleName);
-        GetModelContext context = GetModelContext.fromServiceAndFunctionType(moduleName, functionType);
+        GetModelContext context = GetModelContext.fromServiceAndFunctionType(moduleName, functionType,
+                projectPath, workspaceManager);
         return functionBuilder.getModelTemplate(context);
     }
 

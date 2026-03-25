@@ -18,6 +18,8 @@
 
 package io.ballerina.servicemodelgenerator.extension.model.context;
 
+import org.ballerinalang.langserver.commons.workspace.WorkspaceManager;
+
 import java.util.Locale;
 
 /**
@@ -25,15 +27,17 @@ import java.util.Locale;
  * This context is used to identify the specific service model based on organization,
  * package, module, service type, and function type.
  *
- * @param orgName      Name of the organization
- * @param packageName  Name of the package
- * @param moduleName   Name of the module
- * @param serviceType  Type of the service
- * @param functionType Type of the function
+ * @param orgName          Name of the organization
+ * @param packageName      Name of the package
+ * @param moduleName       Name of the module
+ * @param serviceType      Type of the service
+ * @param functionType     Type of the function
+ * @param projectPath      Path to the project (optional)
+ * @param workspaceManager Workspace manager instance (optional)
  * @since 1.2.0
  */
 public record GetModelContext(String orgName, String packageName, String moduleName, String serviceType,
-                              String functionType) {
+                              String functionType, String projectPath, WorkspaceManager workspaceManager) {
     public GetModelContext {
         orgName = (orgName != null) ? orgName.toLowerCase(Locale.US) : null;
         packageName = (packageName != null) ? packageName.toLowerCase(Locale.US) : null;
@@ -43,11 +47,17 @@ public record GetModelContext(String orgName, String packageName, String moduleN
     }
 
     public static GetModelContext fromOrgAndModule(String orgName, String moduleName) {
-        return new GetModelContext(orgName, moduleName, moduleName, null, null);
+        return new GetModelContext(orgName, moduleName, moduleName, null, null, null, null);
     }
 
     public static GetModelContext fromServiceAndFunctionType(String serviceType, String functionType) {
-        return new GetModelContext(null, null, null, serviceType, functionType);
+        return new GetModelContext(null, null, null, serviceType, functionType, null, null);
+    }
+
+    public static GetModelContext fromServiceAndFunctionType(String serviceType, String functionType,
+                                                             String projectPath,
+                                                             WorkspaceManager workspaceManager) {
+        return new GetModelContext(null, null, null, serviceType, functionType, projectPath, workspaceManager);
     }
 }
 

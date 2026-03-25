@@ -437,7 +437,8 @@ public class ServiceModelGeneratorService implements ExtendedLanguageServerServi
     public CompletableFuture<FunctionModelResponse> getFunctionModel(FunctionModelRequest request) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                return FunctionBuilderRouter.getModelTemplate(request.type(), request.functionName())
+                return FunctionBuilderRouter.getModelTemplate(request.type(), request.functionName(),
+                                request.projectPath(), workspaceManager)
                         .map(FunctionModelResponse::new)
                         .orElseGet(FunctionModelResponse::new);
             } catch (Throwable e) {

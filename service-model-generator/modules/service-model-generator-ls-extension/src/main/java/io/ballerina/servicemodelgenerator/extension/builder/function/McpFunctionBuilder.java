@@ -22,6 +22,7 @@ import com.google.gson.Gson;
 import com.google.gson.stream.JsonReader;
 import io.ballerina.compiler.syntax.tree.FunctionDefinitionNode;
 import io.ballerina.compiler.syntax.tree.MetadataNode;
+import io.ballerina.projects.Project;
 import io.ballerina.servicemodelgenerator.extension.model.Function;
 import io.ballerina.servicemodelgenerator.extension.model.Parameter;
 import io.ballerina.servicemodelgenerator.extension.model.PropertyType;
@@ -31,15 +32,19 @@ import io.ballerina.servicemodelgenerator.extension.model.context.GetModelContex
 import io.ballerina.servicemodelgenerator.extension.model.context.ModelFromSourceContext;
 import io.ballerina.servicemodelgenerator.extension.model.context.UpdateModelContext;
 import io.ballerina.servicemodelgenerator.extension.util.Utils;
+import org.ballerinalang.langserver.commons.eventsync.exceptions.EventSyncException;
+import org.ballerinalang.langserver.commons.workspace.WorkspaceDocumentException;
 import org.eclipse.lsp4j.TextEdit;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,6 +60,14 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
 
     private static final String MCP_FUNCTION_MODEL_LOCATION = "functions/mcp_tool.json";
     private static final String TOOL_DESCRIPTION_PROPERTY = "toolDescription";
+    private static final String SCOPES_PROPERTY = "scopes";
+    private static final String SCOPES_BALLERINA_TYPE = "string|string[]";
+    private static final String MINIMUM_MCP_VERSION = "1.0.0";
+    private static final String BALLERINA_ORG = "ballerina";
+    private static final String PACKAGE = "package";
+    private static final String ORG = "org";
+    private static final String NAME = "name";
+    private static final String VERSION = "version";
 
     // Documentation format constants
     private static final String DOC_COMMENT_PREFIX = "# ";
@@ -363,7 +376,69 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
 
     @Override
     public Optional<Function> getModelTemplate(GetModelContext context) {
-        return getMcpFunctionModel();
+        Optional<Function> functionOpt = getMcpFunctionModel();
+        if (functionOpt.isEmpty()) {
+            return functionOpt;
+        }
+        Function function = functionOpt.get();
+
+        String mcpVersion = getMcpModuleVersion(context);
+        if (mcpVersion != null && compareSemver(mcpVersion, MINIMUM_MCP_VERSION) >= 0) {
+            Value scopesValue = new Value.ValueBuilder()
+                    .metadata("Scopes", "The scopes required for the MCP tool")
+                    .setPlaceholder("")
+                    .enabled(true)
+                    .editable(true)
+                    .optional(true)
+                    .setAdvanced(true)
+                    .types(List.of(
+                            new PropertyType.Builder()
+                                    .fieldType(Value.FieldType.TEXT_SET)
+                                    .ballerinaType(SCOPES_BALLERINA_TYPE)
+                                    .selected(true)
+                                    .build(),
+                            new PropertyType.Builder()
+                                    .fieldType(Value.FieldType.EXPRESSION)
+                                    .ballerinaType(SCOPES_BALLERINA_TYPE)
+                                    .build()
+                    ))
+                    .build();
+            function.getProperties().put(SCOPES_PROPERTY, scopesValue);
+        }
+
+        return Optional.of(function);
+    }
+
+    private String getMcpModuleVersion(GetModelContext context) {
+        if (context.projectPath() == null || context.workspaceManager() == null) {
+            return null;
+        }
+        try {
+            Project project = context.workspaceManager().loadProject(Path.of(context.projectPath()));
+            return project.currentPackage().dependenciesToml()
+                    .map(depToml -> depToml.tomlDocument().toml())
+                    .map(toml -> toml.getTables(PACKAGE)).orElse(List.of()).stream()
+                    .filter(pkg -> BALLERINA_ORG.equals(pkg.get(ORG).map(Object::toString).orElse(""))
+                            && MCP.equals(pkg.get(NAME).map(Object::toString).orElse("")))
+                    .findFirst().flatMap(mcpPackage -> mcpPackage.get(VERSION).map(Objects::toString))
+                    .orElse(null);
+        } catch (WorkspaceDocumentException | EventSyncException e) {
+            return null;
+        }
+    }
+
+    private static int compareSemver(String version1, String version2) {
+        String[] parts1 = version1.split("\\.");
+        String[] parts2 = version2.split("\\.");
+        int length = Math.max(parts1.length, parts2.length);
+        for (int i = 0; i < length; i++) {
+            int num1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
+            int num2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
+            if (num1 != num2) {
+                return Integer.compare(num1, num2);
+            }
+        }
+        return 0;
     }
 
     @Override
