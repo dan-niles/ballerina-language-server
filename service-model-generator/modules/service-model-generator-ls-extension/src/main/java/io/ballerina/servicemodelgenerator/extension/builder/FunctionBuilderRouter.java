@@ -113,7 +113,7 @@ public class FunctionBuilderRouter {
                                                              SemanticModel semanticModel, Project project,
                                                              WorkspaceManager workspaceManager)
             throws Exception {
-        if (function.getKind().equals(OBJECT_METHOD)) {
+        if (function.getKind().equals(OBJECT_METHOD) && !CONSTRUCTOR_MAP.containsKey(moduleName)) {
             moduleName = DEFAULT;
         }
         NodeBuilder<Function> functionBuilder = getFunctionBuilder(moduleName);

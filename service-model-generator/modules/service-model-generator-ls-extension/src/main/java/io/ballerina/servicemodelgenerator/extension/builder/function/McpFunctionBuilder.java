@@ -22,7 +22,9 @@ import com.google.gson.Gson;
 import com.google.gson.stream.JsonReader;
 import io.ballerina.compiler.syntax.tree.FunctionDefinitionNode;
 import io.ballerina.compiler.syntax.tree.MetadataNode;
+import io.ballerina.modelgenerator.commons.CommonUtils;
 import io.ballerina.projects.Project;
+import io.ballerina.servicemodelgenerator.extension.model.Codedata;
 import io.ballerina.servicemodelgenerator.extension.model.Function;
 import io.ballerina.servicemodelgenerator.extension.model.Parameter;
 import io.ballerina.servicemodelgenerator.extension.model.PropertyType;
@@ -32,6 +34,7 @@ import io.ballerina.servicemodelgenerator.extension.model.context.GetModelContex
 import io.ballerina.servicemodelgenerator.extension.model.context.ModelFromSourceContext;
 import io.ballerina.servicemodelgenerator.extension.model.context.UpdateModelContext;
 import io.ballerina.servicemodelgenerator.extension.util.Utils;
+import io.ballerina.tools.text.LinePosition;
 import org.ballerinalang.langserver.commons.eventsync.exceptions.EventSyncException;
 import org.ballerinalang.langserver.commons.workspace.WorkspaceDocumentException;
 import org.eclipse.lsp4j.TextEdit;
@@ -41,6 +44,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +53,7 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static io.ballerina.servicemodelgenerator.extension.util.Constants.CD_TYPE_ANNOTATION_ATTACHMENT;
 import static io.ballerina.servicemodelgenerator.extension.util.Constants.MCP;
 import static io.ballerina.servicemodelgenerator.extension.util.Constants.NEW_LINE;
 import static io.ballerina.servicemodelgenerator.extension.util.Constants.REMOTE;
@@ -68,6 +73,9 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
     private static final String ORG = "org";
     private static final String NAME = "name";
     private static final String VERSION = "version";
+    private static final String TOOL_ANNOTATION_NAME = "Tool";
+    private static final String TOOL_ANNOTATION_PROPERTY = "mcpToolAnnotation";
+    private static final String ANNOT_TOOL_PROPERTY = "annotTool";
 
     // Documentation format constants
     private static final String DOC_COMMENT_PREFIX = "# ";
@@ -149,21 +157,34 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
         TextEdit edit = remoteFunctionEdit.get();
         String originalText = edit.getNewText();
 
+        // Determine the insertion point: before annotation if present, otherwise before function signature
+        String insertionPattern = findDocInsertionPattern(originalText, remoteFunctionPattern);
+
         // Check if there are parameter docs
         if (originalText.contains(PARAM_DOC_PATTERN_STR)) {
             // Has parameters - insert tool description before first parameter
             String result = insertToolDescriptionBeforeParams(originalText, toolDescription, returnType,
-                    remoteFunctionPattern);
+                    insertionPattern);
             edit.setNewText(result);
         } else {
             // No parameters - create complete documentation
             String docString = buildCompleteDocumentation(toolDescription, "", returnType);
-            String result = originalText.replaceFirst(quote(remoteFunctionPattern),
-                    quoteReplacement(docString + "    " + remoteFunctionPattern));
+            String result = originalText.replaceFirst(quote(insertionPattern),
+                    quoteReplacement(docString + "    " + insertionPattern));
             edit.setNewText(result);
         }
 
         return textEdits;
+    }
+
+    private static String findDocInsertionPattern(String text, String remoteFunctionPattern) {
+        // If there's an annotation before the function, insert docs before the annotation
+        int annotIdx = text.indexOf("@");
+        int funcIdx = text.indexOf(remoteFunctionPattern);
+        if (annotIdx >= 0 && funcIdx >= 0 && annotIdx < funcIdx) {
+            return text.substring(annotIdx, text.indexOf("\n", annotIdx)).trim();
+        }
+        return remoteFunctionPattern;
     }
 
     /**
@@ -208,6 +229,67 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
         return function.getProperties().containsKey(TOOL_DESCRIPTION_PROPERTY)
                 ? function.getProperties().get(TOOL_DESCRIPTION_PROPERTY).getValue()
                 : null;
+    }
+
+    private static void injectToolAnnotation(Function function) {
+        Map<String, Value> properties = function.getProperties();
+        Value scopesValue = properties.remove(SCOPES_PROPERTY);
+
+        String annotationBody = buildToolAnnotationBody(scopesValue);
+        if (annotationBody == null) {
+            return;
+        }
+
+        Codedata annotCodedata = new Codedata.Builder()
+                .setType(CD_TYPE_ANNOTATION_ATTACHMENT)
+                .setOriginalName(TOOL_ANNOTATION_NAME)
+                .setOrgName(BALLERINA_ORG)
+                .setModuleName(MCP)
+                .build();
+
+        Value annotValue = new Value.ValueBuilder()
+                .value(annotationBody)
+                .setCodedata(annotCodedata)
+                .enabled(true)
+                .editable(true)
+                .addImport(MCP, BALLERINA_ORG + "/" + MCP + ":")
+                .build();
+
+        properties.put(TOOL_ANNOTATION_PROPERTY, annotValue);
+    }
+
+    private static String buildToolAnnotationBody(Value scopesValue) {
+        if (scopesValue == null) {
+            return null;
+        }
+
+        Object rawValue = scopesValue.getValueAsObject();
+        if (rawValue == null) {
+            return null;
+        }
+
+        String scopesStr;
+        if (rawValue instanceof List<?> list) {
+            if (list.isEmpty()) {
+                return null;
+            }
+            // TEXT_SET sends values as a list of strings (e.g., ["string `scope-1`", "string `scope-2`"])
+            // extractLiteralFromStringTemplate already wraps the result in double quotes
+            List<String> items = list.stream()
+                    .map(Object::toString)
+                    .map(CommonUtils::extractLiteralFromStringTemplate)
+                    .toList();
+            scopesStr = "[" + String.join(", ", items) + "]";
+        } else {
+            // EXPRESSION mode sends a single string value
+            String value = scopesValue.getValue();
+            if (value == null || value.isEmpty()) {
+                return null;
+            }
+            scopesStr = value;
+        }
+
+        return " {scopes: " + scopesStr + "}";
     }
 
     /**
@@ -289,18 +371,6 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
         return textEdits.values().stream()
                 .flatMap(List::stream)
                 .filter(edit -> edit.getNewText() != null && edit.getNewText().contains(remoteFunctionPattern))
-                .findFirst();
-    }
-
-    /**
-     * Finds the first TextEdit in the result map.
-     *
-     * @param textEdits Map of text edits
-     * @return Optional containing the first TextEdit
-     */
-    private static Optional<TextEdit> findFirstEdit(Map<String, List<TextEdit>> textEdits) {
-        return textEdits.values().stream()
-                .flatMap(List::stream)
                 .findFirst();
     }
 
@@ -443,6 +513,7 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
 
     @Override
     public Map<String, List<TextEdit>> addModel(AddModelContext context) throws Exception {
+        injectToolAnnotation(context.function());
         Map<String, List<TextEdit>> textEdits = super.addModel(context);
         String toolDescription = extractToolDescription(context.function());
         return addFunctionDocumentation(textEdits, context, toolDescription);
@@ -450,38 +521,71 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
 
     @Override
     public Map<String, List<TextEdit>> updateModel(UpdateModelContext context) {
-        Map<String, List<TextEdit>> result = super.updateModel(context);
+        injectToolAnnotation(context.function());
+        Map<String, List<TextEdit>> result = new HashMap<>(super.updateModel(context));
+        result.replaceAll((k, v) -> new ArrayList<>(v));
 
         String toolDescription = extractToolDescription(context.function());
         String returnType = getReturnTypeDescription(context.function());
 
-        Optional<TextEdit> firstEdit = findFirstEdit(result);
-        if (firstEdit.isEmpty()) {
-            return result;
-        }
+        // Find the documentation edit (starts with # or is empty doc replacement)
+        Optional<TextEdit> docEdit = findDocEdit(result);
 
-        TextEdit edit = firstEdit.get();
-        String originalText = edit.getNewText();
-
-        if (originalText == null) {
-            return result;
-        }
-
-        String stripped = originalText.stripLeading();
-
-        if (stripped.startsWith("#")) {
-            // Has documentation - keep it and add tool desc + return type
-            updateDocumentationEdit(edit, originalText, toolDescription, returnType);
-        } else if (stripped.isEmpty()) {
-            // Empty string - add only tool desc and return type
-            String newDoc = buildCompleteDocumentation(toolDescription, "", returnType);
-            edit.setNewText(newDoc);
+        if (docEdit.isPresent()) {
+            TextEdit edit = docEdit.get();
+            String originalText = edit.getNewText();
+            if (originalText != null) {
+                String stripped = originalText.stripLeading();
+                if (stripped.startsWith("#")) {
+                    updateDocumentationEdit(edit, originalText, toolDescription, returnType);
+                } else {
+                    String newDoc = buildCompleteDocumentation(toolDescription, "", returnType);
+                    edit.setNewText(newDoc);
+                }
+            }
         } else {
-            // Non-documentation content - skip update
-            // This could be other code content that shouldn't have documentation prepended
+            // No existing doc edit — create one if we have a tool description
+            String newDoc = buildCompleteDocumentation(toolDescription, "", returnType);
+            if (!newDoc.isEmpty()) {
+                addDocEditBeforeFunction(result, context, newDoc);
+            }
         }
 
         return result;
+    }
+
+    private static Optional<TextEdit> findDocEdit(Map<String, List<TextEdit>> textEdits) {
+        return textEdits.values().stream()
+                .flatMap(List::stream)
+                .filter(edit -> {
+                    String text = edit.getNewText();
+                    if (text == null) {
+                        return false;
+                    }
+                    String stripped = text.stripLeading();
+                    return stripped.startsWith("#") || stripped.isEmpty();
+                })
+                .findFirst();
+    }
+
+    private static void addDocEditBeforeFunction(Map<String, List<TextEdit>> result,
+                                                 UpdateModelContext context,
+                                                 String docText) {
+        FunctionDefinitionNode functionNode = context.functionNode();
+        Optional<MetadataNode> metadata = functionNode.metadata();
+        LinePosition insertPos;
+        if (metadata.isPresent()) {
+            insertPos = metadata.get().lineRange().startLine();
+        } else if (!functionNode.qualifierList().isEmpty()) {
+            insertPos = functionNode.qualifierList().get(0).lineRange().startLine();
+        } else {
+            insertPos = functionNode.functionKeyword().lineRange().startLine();
+        }
+
+        // Ensure doc text ends cleanly without extra blank lines before the annotation
+        String trimmedDocText = docText.stripTrailing() + NEW_LINE;
+        TextEdit docEdit = new TextEdit(Utils.toRange(insertPos), trimmedDocText);
+        result.computeIfAbsent(context.filePath(), k -> new ArrayList<>()).add(docEdit);
     }
 
     @Override
@@ -498,7 +602,63 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
             }
         }
 
+        String mcpVersion = context.version();
+        if (mcpVersion != null && compareSemver(mcpVersion, MINIMUM_MCP_VERSION) >= 0) {
+            extractScopesFromAnnotation(function);
+        }
+
         return function;
+    }
+
+    private static void extractScopesFromAnnotation(Function function) {
+        List<Object> scopeItems = new ArrayList<>();
+
+        Value toolAnnotation = function.getProperties().get(ANNOT_TOOL_PROPERTY);
+        if (toolAnnotation != null && toolAnnotation.getValue() != null) {
+            String annotValue = toolAnnotation.getValue().trim();
+            // Parse scopes from the annotation value like {scopes: ["scope1", "scope2"]}
+            Pattern scopesPattern = Pattern.compile("scopes\\s*:\\s*(\\[.*?])");
+            Matcher matcher = scopesPattern.matcher(annotValue);
+            if (matcher.find()) {
+                String scopesArrayStr = matcher.group(1);
+                // Parse individual scope values from the array string like ["scope-1", "scope-2"]
+                Pattern scopeItemPattern = Pattern.compile("\"([^\"]*?)\"");
+                Matcher itemMatcher = scopeItemPattern.matcher(scopesArrayStr);
+                while (itemMatcher.find()) {
+                    scopeItems.add("string `" + itemMatcher.group(1) + "`");
+                }
+
+                // Remove scopes from the annotation value so it's not duplicated
+                String remaining = annotValue.replaceFirst(",?\\s*scopes\\s*:\\s*\\[.*?]\\s*,?", "").trim();
+                if (remaining.equals("{") || remaining.equals("{}") || remaining.equals("{ }")) {
+                    function.getProperties().remove(ANNOT_TOOL_PROPERTY);
+                } else {
+                    toolAnnotation.setValue(remaining);
+                }
+            }
+        }
+
+        Value scopesValue = new Value.ValueBuilder()
+                .metadata("Scopes", "The scopes required for the MCP tool")
+                .setPlaceholder("")
+                .value(scopeItems.isEmpty() ? null : scopeItems)
+                .enabled(true)
+                .editable(true)
+                .optional(true)
+                .setAdvanced(true)
+                .types(List.of(
+                        new PropertyType.Builder()
+                                .fieldType(Value.FieldType.TEXT_SET)
+                                .ballerinaType(SCOPES_BALLERINA_TYPE)
+                                .selected(true)
+                                .build(),
+                        new PropertyType.Builder()
+                                .fieldType(Value.FieldType.EXPRESSION)
+                                .ballerinaType(SCOPES_BALLERINA_TYPE)
+                                .build()
+                ))
+                .build();
+        function.getProperties().put(SCOPES_PROPERTY, scopesValue);
     }
 
     @Override
