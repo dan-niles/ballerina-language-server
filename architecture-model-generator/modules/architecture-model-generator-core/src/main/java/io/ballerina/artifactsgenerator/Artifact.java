@@ -63,6 +63,7 @@ public record Artifact(String id, LineRange location, String type, String name, 
     private static final String CATEGORY_CONFIGURATIONS = "Configurations";
     private static final String CATEGORY_TYPES = "Types";
     private static final String CATEGORY_CONNECTIONS = "Connections";
+    private static final String CATEGORY_AGENTS = "Agents";
     private static final String CATEGORY_VARIABLES = "Variables";
     private static final String CATEGORY_DEFAULT = "Others";
 
@@ -78,6 +79,7 @@ public record Artifact(String id, LineRange location, String type, String name, 
             Map.entry(Type.CONFIGURABLE.name(), CATEGORY_CONFIGURATIONS),
             Map.entry(Type.TYPE.name(), CATEGORY_TYPES),
             Map.entry(Type.CONNECTION.name(), CATEGORY_CONNECTIONS),
+            Map.entry(Type.AGENT.name(), CATEGORY_AGENTS),
             Map.entry(Type.VARIABLE.name(), CATEGORY_VARIABLES));
 
     private static final Map<String, String> entryPointMap = Map.ofEntries(
@@ -137,6 +139,7 @@ public record Artifact(String id, LineRange location, String type, String name, 
         CONFIGURABLE,
         TYPE,
         CONNECTION,
+        AGENT,
         VARIABLE
     }
 
