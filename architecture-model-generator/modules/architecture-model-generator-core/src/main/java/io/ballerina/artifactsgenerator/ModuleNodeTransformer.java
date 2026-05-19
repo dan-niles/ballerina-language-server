@@ -56,6 +56,8 @@ import static io.ballerina.modelgenerator.commons.CommonUtils.PERSIST_MODEL_FILE
 import static io.ballerina.modelgenerator.commons.CommonUtils.getPersistModelFilePath;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiDataLoader;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAgentClass;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiFixedReturnAgent;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiInferredReturnAgent;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiMemoryStore;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiKnowledgeBase;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiVectorStore;
@@ -298,7 +300,10 @@ public class ModuleNodeTransformer extends NodeTransformer<Optional<Artifact>> {
             TypeReferenceTypeSymbol typeDescriptorSymbol =
                     (TypeReferenceTypeSymbol) ((VariableSymbol) symbol).typeDescriptor();
             ClassSymbol classSymbol = (ClassSymbol) typeDescriptorSymbol.typeDescriptor();
-            if (isAgentClass(classSymbol)) {
+            // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgent, so this ordering matters.
+            if (isAgentClass(classSymbol)
+                    || isAiFixedReturnAgent(classSymbol)
+                    || isAiInferredReturnAgent(classSymbol)) {
                 return Optional.of(classSymbol);
             }
         } catch (Throwable e) {

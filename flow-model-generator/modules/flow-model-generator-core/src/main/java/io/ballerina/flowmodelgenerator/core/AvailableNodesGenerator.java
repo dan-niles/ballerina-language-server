@@ -79,6 +79,8 @@ import static io.ballerina.modelgenerator.commons.CommonUtils.PERSIST_MODEL_FILE
 import static io.ballerina.modelgenerator.commons.CommonUtils.getPersistDatabaseIcon;
 import static io.ballerina.modelgenerator.commons.CommonUtils.getPersistModelFilePath;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAgentClass;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiFixedReturnAgent;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiInferredReturnAgent;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiEmbeddingProvider;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiModelProvider;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isPersistClient;
@@ -504,7 +506,10 @@ public class AvailableNodesGenerator {
     private Optional<Category> getAgent(Symbol symbol) {
         return getCategory(symbol, classSymbol -> {
             try {
-                return isAgentClass(classSymbol);
+                // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgent.
+                return isAgentClass(classSymbol)
+                        || isAiFixedReturnAgent(classSymbol)
+                        || isAiInferredReturnAgent(classSymbol);
             } catch (Exception e) {
                 return false;
             }

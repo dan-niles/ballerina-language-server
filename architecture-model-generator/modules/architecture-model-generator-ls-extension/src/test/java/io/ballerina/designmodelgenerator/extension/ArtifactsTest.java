@@ -65,7 +65,9 @@ public class ArtifactsTest extends AbstractLSTest {
                 // TODO: Investigate why the following test fails intermittently in Windows
                 "graphql.json",
                 // TODO: Include this after discussing how to integrate submodules into the artifacts tree
-                "persist.json"
+                "persist.json",
+                // TODO: Capture expected snapshot for the custom *ai:FixedReturnAgent fixture.
+                "agent_type.json"
         };
     }
 
