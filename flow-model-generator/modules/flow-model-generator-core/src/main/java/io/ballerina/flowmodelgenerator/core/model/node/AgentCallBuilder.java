@@ -267,6 +267,19 @@ public class AgentCallBuilder extends CallBuilder {
 
     public static void setAdditionalAgentProperties(NodeBuilder nodeBuilder,
                                                     Map<String, AiUtils.AgentPropertyValue> propertyValues) {
+        // AGENT_CALL keeps role/instructions optional (the call has its own required `query` param).
+        setAdditionalAgentProperties(nodeBuilder, propertyValues, true);
+    }
+
+    /**
+     * Adds the friendly {@code role} and {@code instructions} fields. On the AGENT node these are required
+     * (the systemPrompt record they back has no other visible field), whereas on AGENT_CALL they stay optional.
+     *
+     * @param optional whether the role/instructions fields are optional
+     */
+    public static void setAdditionalAgentProperties(NodeBuilder nodeBuilder,
+                                                    Map<String, AiUtils.AgentPropertyValue> propertyValues,
+                                                    boolean optional) {
         AiUtils.AgentPropertyValue roleProperty = (propertyValues != null && propertyValues.containsKey(ROLE)) ?
                 propertyValues.get(ROLE) : null;
         AiUtils.AgentPropertyValue instructionsProperty =
@@ -287,9 +300,9 @@ public class AgentCallBuilder extends CallBuilder {
                 instructionsProperty.selectedType() : Property.ValueType.PROMPT;
 
         AiUtils.addStringProperty(nodeBuilder, ROLE, ROLE_LABEL, ROLE_DOC, ROLE_PLACEHOLDER, roleValue,
-                roleSelectedType);
+                roleSelectedType, optional);
         AiUtils.addStringProperty(nodeBuilder, INSTRUCTIONS, INSTRUCTIONS_LABEL, INSTRUCTIONS_DOC,
-                INSTRUCTIONS_PLACEHOLDER, instructionsValue, instructionsSelectedType);
+                INSTRUCTIONS_PLACEHOLDER, instructionsValue, instructionsSelectedType, optional);
     }
 
     private static FlowNode getOrCreateAgentTemplate(TemplateContext context) {
@@ -503,26 +516,39 @@ public class AgentCallBuilder extends CallBuilder {
     }
 
     private void updateSystemPromptProperty(FlowNode agentNode, FlowNode agentCallNode) {
-        Property systemPrompt = agentNode.properties().get(SYSTEM_PROMPT);
+        writeSystemPromptFromRoleInstructions(agentCallNode, agentNode);
+    }
+
+    /**
+     * Builds the {@code systemPrompt} record value from the friendly {@code role} and {@code instructions} fields and
+     * writes it to the target node. The role/instructions are read from {@code roleSource} (which may be the same node
+     * as {@code systemPromptTarget}, as is the case for the AGENT node). PROMPT-typed values are escaped as string
+     * templates. No-op when the target has no {@code systemPrompt} property.
+     *
+     * @param roleSource         the node providing the {@code role}/{@code instructions} property values
+     * @param systemPromptTarget the node whose {@code systemPrompt} property is updated
+     */
+    public static void writeSystemPromptFromRoleInstructions(FlowNode roleSource, FlowNode systemPromptTarget) {
+        Property systemPrompt = systemPromptTarget.properties().get(SYSTEM_PROMPT);
         if (systemPrompt == null) {
             return;
         }
-        String role = agentCallNode.getProperty(ROLE).map(Property::value).orElse("").toString();
-        String instructions = agentCallNode.getProperty(INSTRUCTIONS).map(Property::value).orElse("").toString();
+        String role = roleSource.getProperty(ROLE).map(Property::value).orElse("").toString();
+        String instructions = roleSource.getProperty(INSTRUCTIONS).map(Property::value).orElse("").toString();
 
-        String escapedRole = isPromptTypeSelected(agentCallNode.getProperty(ROLE).orElse(null))
+        String escapedRole = isPromptTypeSelected(roleSource.getProperty(ROLE).orElse(null))
                 ? AiUtils.replaceBackticksForStringTemplate(role) : role;
-        String escapedInstructions = isPromptTypeSelected(agentCallNode.getProperty(INSTRUCTIONS).orElse(null))
+        String escapedInstructions = isPromptTypeSelected(roleSource.getProperty(INSTRUCTIONS).orElse(null))
                 ? AiUtils.replaceBackticksForStringTemplate(instructions) : instructions;
 
         String systemPromptValue =
                 "{role: " + escapedRole + ", instructions: " + escapedInstructions + "}";
 
         Property updatedProperty = AiUtils.createUpdatedProperty(systemPrompt, systemPromptValue);
-        agentNode.properties().put(SYSTEM_PROMPT, updatedProperty);
+        systemPromptTarget.properties().put(SYSTEM_PROMPT, updatedProperty);
     }
 
-    private boolean isPromptTypeSelected(Property property) {
+    private static boolean isPromptTypeSelected(Property property) {
         if (property == null || property.types() == null) {
             return false;
         }

@@ -19,6 +19,9 @@
 package io.ballerina.flowmodelgenerator.core.model.node;
 
 import io.ballerina.compiler.syntax.tree.SyntaxKind;
+import io.ballerina.flowmodelgenerator.core.AiUtils;
+import io.ballerina.flowmodelgenerator.core.model.FlowNode;
+import io.ballerina.flowmodelgenerator.core.model.NodeBuilder;
 import io.ballerina.flowmodelgenerator.core.model.NodeKind;
 import io.ballerina.flowmodelgenerator.core.model.Property;
 import io.ballerina.flowmodelgenerator.core.model.SourceBuilder;
@@ -48,6 +51,12 @@ public class AgentBuilder extends CallBuilder {
     public static final String DESCRIPTION = "Create new agent";
     public static final String BALLERINA = "ballerina";
 
+    // Config fields hidden from the AGENT node form because they are configured separately: the model provider is
+    // auto-wired, tools are managed via the tools panel, and memory via the memory manager. The raw systemPrompt
+    // record is also hidden in favour of the friendly Role + Instructions fields. Mirrors AGENT_CALL's hiding.
+    public static final Set<String> CONFIG_PARAMS_TO_HIDE =
+            Set.of(AgentCallBuilder.SYSTEM_PROMPT, MODEL, TOOLS, AgentCallBuilder.MEMORY);
+
     @Override
     protected NodeKind getFunctionNodeKind() {
         return NodeKind.AGENT;
@@ -66,7 +75,15 @@ public class AgentBuilder extends CallBuilder {
 
     @Override
     public Map<Path, List<TextEdit>> toSource(SourceBuilder sourceBuilder) {
-        Optional<Property> scopeOpt = sourceBuilder.flowNode.getProperty(Property.SCOPE_KEY);
+        FlowNode flowNode = sourceBuilder.flowNode;
+
+        // Reconstruct the systemPrompt record from the friendly Role + Instructions fields (mirrors AGENT_CALL).
+        if (flowNode.getProperty(AgentCallBuilder.ROLE).isPresent()
+                || flowNode.getProperty(AgentCallBuilder.INSTRUCTIONS).isPresent()) {
+            AgentCallBuilder.writeSystemPromptFromRoleInstructions(flowNode, flowNode);
+        }
+
+        Optional<Property> scopeOpt = flowNode.getProperty(Property.SCOPE_KEY);
         boolean isServiceInitScope = scopeOpt.isPresent() && scopeOpt.get().value().equals(Property.SERVICE_INIT_SCOPE);
 
         if (isServiceInitScope) {
@@ -81,8 +98,9 @@ public class AgentBuilder extends CallBuilder {
                 .keyword(SyntaxKind.CHECK_KEYWORD)
                 .keyword(SyntaxKind.NEW_KEYWORD)
                 .stepOut()
-                .functionParameters(sourceBuilder.flowNode, Set.of(Property.VARIABLE_KEY, Property.TYPE_KEY,
-                        Property.SCOPE_KEY, Property.CHECK_ERROR_KEY), true);
+                .functionParameters(flowNode, Set.of(Property.VARIABLE_KEY, Property.TYPE_KEY,
+                        Property.SCOPE_KEY, Property.CHECK_ERROR_KEY,
+                        AgentCallBuilder.ROLE, AgentCallBuilder.INSTRUCTIONS), true);
 
         return sourceBuilder.textEdit().acceptImport().build();
     }
@@ -99,5 +117,26 @@ public class AgentBuilder extends CallBuilder {
         properties().scope(Property.GLOBAL_SCOPE);
 
         metadata().addData(PARAMS_TO_HIDE, List.of(MODEL, TOOLS, TYPE));
+
+        // Hide the separately-configured fields and expose friendly Role + Instructions instead of the raw
+        // systemPrompt record (mirrors AGENT_CALL).
+        hideAgentConfigProperties(this);
+        // Role + Instructions are required on the AGENT node (they back the systemPrompt record, and no other
+        // configuration field is visible).
+        AgentCallBuilder.setAdditionalAgentProperties(this, null, false);
+    }
+
+    /**
+     * Marks the separately-configured agent fields ({@link #CONFIG_PARAMS_TO_HIDE}) as hidden on the given builder,
+     * preserving their existing values. Used for both the AGENT template and analyzed AGENT nodes.
+     */
+    public static void hideAgentConfigProperties(NodeBuilder nodeBuilder) {
+        Map<String, Property> props = nodeBuilder.properties().build();
+        for (String key : CONFIG_PARAMS_TO_HIDE) {
+            Property property = props.get(key);
+            if (property != null) {
+                AiUtils.addPropertyFromTemplate(nodeBuilder, key, property, null, true);
+            }
+        }
     }
 }

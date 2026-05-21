@@ -407,9 +407,11 @@ public class AiUtils {
      * @param placeholder  the placeholder text
      * @param value        the property value
      * @param selectedType the selected field type (PROMPT or EXPRESSION)
+     * @param optional     whether the property is optional
      */
     public static void addStringProperty(NodeBuilder nodeBuilder, String key, String label, String description,
-                                         String placeholder, String value, Property.ValueType selectedType) {
+                                         String placeholder, String value, Property.ValueType selectedType,
+                                         boolean optional) {
         if (nodeBuilder == null || key == null) {
             throw new IllegalArgumentException("NodeBuilder and key cannot be null");
         }
@@ -434,7 +436,7 @@ public class AiUtils {
                     .selected(!isPromptSelected)
                     .stepOut()
                 .placeholder(placeholder != null ? placeholder : "")
-                .optional(true)
+                .optional(optional)
                 .editable()
                 .codedata()
                     .kind("REQUIRED")

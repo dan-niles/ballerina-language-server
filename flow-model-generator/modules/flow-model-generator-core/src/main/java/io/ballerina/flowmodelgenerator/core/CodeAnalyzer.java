@@ -261,6 +261,7 @@ public class CodeAnalyzer extends NodeVisitor {
     private static final String FIELD_MODEL = "model";
     private static final String FIELD_SYSTEM_PROMPT = "systemPrompt";
     private static final String FIELD_MEMORY = "memory";
+    private static final String MODEL_PROVIDER_INTERFACE_NAME = "ModelProvider";
 
     // Metadata data keys
     private static final String KIND_KEY = "kind";
@@ -464,7 +465,7 @@ public class CodeAnalyzer extends NodeVisitor {
                 if (newExprOpt.isPresent()) {
                     agentData.put(Property.SCOPE_KEY,
                             new AiUtils.AgentPropertyValue(Property.SERVICE_INIT_SCOPE, Property.ValueType.EXPRESSION));
-                    genAgentData(newExprOpt.get(), classSymbol, agentData);
+                    genAgentData(newExprOpt.get(), classSymbol, agentData, true);
                 }
             }
         } else {
@@ -504,7 +505,8 @@ public class CodeAnalyzer extends NodeVisitor {
                 }
                 Optional<ImplicitNewExpressionNode> newExpressionNodeOpt = getNewExpr(initializerExpr);
                 newExpressionNodeOpt.ifPresent(
-                        implicitNewExpressionNode -> genAgentData(implicitNewExpressionNode, classSymbol, agentData));
+                        implicitNewExpressionNode -> genAgentData(implicitNewExpressionNode, classSymbol, agentData,
+                                true));
             }
         }
     }
@@ -557,7 +559,7 @@ public class CodeAnalyzer extends NodeVisitor {
     }
 
     private void genAgentData(ImplicitNewExpressionNode newExpressionNode, ClassSymbol classSymbol,
-                              Map<String, AiUtils.AgentPropertyValue> agentData) {
+                              Map<String, AiUtils.AgentPropertyValue> agentData, boolean includeCallProperties) {
         Optional<ParenthesizedArgList> argList = newExpressionNode.parenthesizedArgList();
         if (argList.isEmpty()) {
             return;
@@ -644,36 +646,7 @@ public class CodeAnalyzer extends NodeVisitor {
         }
 
         if (systemPromptArg != null && systemPromptArg.kind() == SyntaxKind.MAPPING_CONSTRUCTOR) {
-            MappingConstructorExpressionNode mappingCtrExprNode =
-                    (MappingConstructorExpressionNode) systemPromptArg;
-            SeparatedNodeList<MappingFieldNode> fields = mappingCtrExprNode.fields();
-            for (MappingFieldNode field : fields) {
-                SyntaxKind kind = field.kind();
-                if (kind != SyntaxKind.SPECIFIC_FIELD) {
-                    continue;
-                }
-                SpecificFieldNode specificFieldNode = (SpecificFieldNode) field;
-                Optional<ExpressionNode> valueExprOpt = specificFieldNode.valueExpr();
-                if (valueExprOpt.isEmpty()) {
-                    continue;
-                }
-                ExpressionNode valueExpr = valueExprOpt.get();
-                String value;
-                Property.ValueType selectedType;
-                if (valueExpr.kind() == SyntaxKind.STRING_TEMPLATE_EXPRESSION) {
-                    TemplateExpressionNode templateExpr = (TemplateExpressionNode) valueExpr;
-                    value = templateExpr.content().stream()
-                            .map(Node::toString)
-                            .collect(Collectors.joining());
-                    value = AiUtils.restoreBackticksFromStringTemplate(value);
-                    selectedType = Property.ValueType.PROMPT;
-                } else {
-                    value = valueExpr.toString().trim();
-                    selectedType = Property.ValueType.EXPRESSION;
-                }
-                agentData.put(specificFieldNode.fieldName().toString().trim(),
-                        new AiUtils.AgentPropertyValue(value, selectedType));
-            }
+            parseSystemPromptFields((MappingConstructorExpressionNode) systemPromptArg, agentData);
 
             Map<String, String> simpleAgentData = agentData.entrySet().stream()
                     .collect(Collectors.toMap(
@@ -714,6 +687,13 @@ public class CodeAnalyzer extends NodeVisitor {
             }
         }
 
+        // The remaining setup (AGENT_CALL-style properties + agent codedata reference) only applies to the
+        // agent->run() call node. The AGENT declaration node reuses just the metadata above; its own
+        // properties are set separately, so skip this to avoid clobbering them.
+        if (!includeCallProperties) {
+            return;
+        }
+
         // Find the agent variable declaration to get the correct line range and source code
         NonTerminalNode statementNode = newExpressionNode.parent();
         while (statementNode != null && statementNode.kind() != SyntaxKind.LOCAL_VAR_DECL &&
@@ -751,6 +731,80 @@ public class CodeAnalyzer extends NodeVisitor {
         AgentCallBuilder.setAdditionalAgentProperties(nodeBuilder, agentData);
 
         nodeBuilder.codedata().addData(Constants.Ai.AGENT_CODEDATA, codedata);
+    }
+
+    /**
+     * Parses the {@code role} and {@code instructions} fields from an agent's {@code systemPrompt} record mapping into
+     * {@code agentData}, detecting PROMPT-typed (string template) versus plain expression values.
+     */
+    private void parseSystemPromptFields(MappingConstructorExpressionNode mappingCtr,
+                                         Map<String, AiUtils.AgentPropertyValue> agentData) {
+        for (MappingFieldNode field : mappingCtr.fields()) {
+            if (field.kind() != SyntaxKind.SPECIFIC_FIELD) {
+                continue;
+            }
+            SpecificFieldNode specificFieldNode = (SpecificFieldNode) field;
+            Optional<ExpressionNode> valueExprOpt = specificFieldNode.valueExpr();
+            if (valueExprOpt.isEmpty()) {
+                continue;
+            }
+            ExpressionNode valueExpr = valueExprOpt.get();
+            String value;
+            Property.ValueType selectedType;
+            if (valueExpr.kind() == SyntaxKind.STRING_TEMPLATE_EXPRESSION) {
+                TemplateExpressionNode templateExpr = (TemplateExpressionNode) valueExpr;
+                value = templateExpr.content().stream()
+                        .map(Node::toString)
+                        .collect(Collectors.joining());
+                value = AiUtils.restoreBackticksFromStringTemplate(value);
+                selectedType = Property.ValueType.PROMPT;
+            } else {
+                value = valueExpr.toString().trim();
+                selectedType = Property.ValueType.EXPRESSION;
+            }
+            agentData.put(specificFieldNode.fieldName().toString().trim(),
+                    new AiUtils.AgentPropertyValue(value, selectedType));
+        }
+    }
+
+    /**
+     * Replaces the raw {@code systemPrompt} record on an analyzed AGENT node with the friendly Role + Instructions
+     * fields (mirrors the AGENT_CALL form). The {@code systemPrompt} property is kept but hidden so source generation
+     * can rebuild it from the Role + Instructions values.
+     */
+    private void applyAgentRoleInstructionFields(SeparatedNodeList<FunctionArgumentNode> argumentNodes) {
+        Map<String, AiUtils.AgentPropertyValue> agentData = new HashMap<>();
+        ExpressionNode systemPromptArg = extractSystemPromptArg(argumentNodes);
+        if (systemPromptArg != null && systemPromptArg.kind() == SyntaxKind.MAPPING_CONSTRUCTOR) {
+            parseSystemPromptFields((MappingConstructorExpressionNode) systemPromptArg, agentData);
+        }
+
+        AgentBuilder.hideAgentConfigProperties(nodeBuilder);
+        // Role + Instructions are required on the AGENT node (see AgentBuilder).
+        AgentCallBuilder.setAdditionalAgentProperties(nodeBuilder, agentData, false);
+    }
+
+    private ExpressionNode extractSystemPromptArg(SeparatedNodeList<FunctionArgumentNode> argumentNodes) {
+        if (argumentNodes == null) {
+            return null;
+        }
+        for (FunctionArgumentNode arg : argumentNodes) {
+            if (arg instanceof NamedArgumentNode namedArgumentNode) {
+                if (FIELD_SYSTEM_PROMPT.equals(namedArgumentNode.argumentName().name().text())) {
+                    return namedArgumentNode.expression();
+                }
+            } else if (arg instanceof PositionalArgumentNode positionalArg
+                    && positionalArg.expression() instanceof MappingConstructorExpressionNode mappingCtr) {
+                for (MappingFieldNode field : mappingCtr.fields()) {
+                    if (field instanceof SpecificFieldNode specificField
+                            && FIELD_SYSTEM_PROMPT.equals(specificField.fieldName().toString().trim())
+                            && specificField.valueExpr().isPresent()) {
+                        return specificField.valueExpr().get();
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private boolean isMcpToolKitAiClass(TypeSymbol typeSymbol) {
@@ -1669,6 +1723,16 @@ public class CodeAnalyzer extends NodeVisitor {
                 .properties()
                 .scope(connectionScope)
                 .checkError(true, NewConnectionBuilder.CHECK_ERROR_DOC, false);
+
+        if (kind == NodeKind.AGENT) {
+            applyAgentRoleInstructionFields(argumentNodes);
+            // Inject the same rich metadata (tools/model/memory/agent with icons) the AGENT_CALL node gets,
+            // so the standalone agent declaration renders model/tool/memory icons too. Only the metadata is
+            // reused (includeCallProperties = false) to avoid overwriting the declaration's own properties.
+            if (newExpressionNode instanceof ImplicitNewExpressionNode implicitAgentExpr) {
+                genAgentData(implicitAgentExpr, classSymbol, new HashMap<>(), false);
+            }
+        }
     }
 
     /**
@@ -2326,9 +2390,16 @@ public class CodeAnalyzer extends NodeVisitor {
                 return null;
             }
             ModuleID id = optModule.get().id();
+            String iconType = symbolName.orElse("");
+            // The generic `ai:ModelProvider` interface name maps to no provider icon. Fall back to the module
+            // (e.g. "ai.anthropic"), which the frontend icon map also recognizes, so providers referenced via
+            // the interface type resolve to their bundled SVG logo instead of the remote CDN image.
+            if (iconType.isEmpty() || iconType.equals(MODEL_PROVIDER_INTERFACE_NAME)) {
+                iconType = id.packageName();
+            }
             return new ModelData(optSymbol.get().getName().orElse(""),
                     CommonUtils.generateIcon(id.orgName(), id.packageName(), id.version()),
-                    symbolName.orElse(""));
+                    iconType);
         } else if (expressionNode.kind() == SyntaxKind.FIELD_ACCESS) {
             FieldAccessExpressionNode fieldAccessExpressionNode = (FieldAccessExpressionNode) expressionNode;
             return getModelIconUrl(fieldAccessExpressionNode.fieldName());
