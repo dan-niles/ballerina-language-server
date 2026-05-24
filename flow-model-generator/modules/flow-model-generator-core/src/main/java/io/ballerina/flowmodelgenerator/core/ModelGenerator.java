@@ -81,10 +81,13 @@ import java.util.stream.Stream;
 
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAgentClass;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiDataLoader;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiChunker;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiEmbeddingProvider;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiFixedReturnAgent;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiInferredReturnAgent;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiKnowledgeBase;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiMemoryStore;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiModelProvider;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiVectorStore;
 
 /**
@@ -324,6 +327,16 @@ public class ModelGenerator {
         String kindFilter = queryMap != null ? queryMap.get(NODE_KIND_FILTER) : null;
         String exactMatchFilter = queryMap != null ? queryMap.get(EXACT_MATCH_FILTER) : null;
 
+        // Resolve the requested kind up front so non-matching symbols can be skipped before the costly build.
+        NodeKind requiredNodeKind = null;
+        if (kindFilter != null && !kindFilter.isEmpty()) {
+            try {
+                requiredNodeKind = NodeKind.valueOf(kindFilter);
+            } catch (IllegalArgumentException e) {
+                return List.of();
+            }
+        }
+
         // Apply symbol-level filters first (exactMatch)
         Stream<Symbol> stream = symbols.stream()
                 .filter(symbol -> symbol.kind() == SymbolKind.VARIABLE || symbol.kind() == SymbolKind.CLASS_FIELD)
@@ -337,24 +350,45 @@ public class ModelGenerator {
         }
         List<Symbol> filteredSymbols = stream.toList();
 
-        // Convert symbols to FlowNodes
+        // Convert symbols to FlowNodes. buildFlowNode runs a full CodeAnalyzer (very expensive for agents),
+        // so skip a variable whose type can't produce the requested kind before doing that work.
         List<FlowNode> flowNodesList = new ArrayList<>();
         for (Symbol symbol : filteredSymbols) {
+            if (requiredNodeKind != null && symbol.kind() == SymbolKind.VARIABLE
+                    && !symbolMatchesKind(symbol, requiredNodeKind)) {
+                continue;
+            }
             buildFlowNode(symbol).ifPresent(flowNodesList::add);
         }
 
-        // Apply NodeKind filter if present
-        if (kindFilter != null && !kindFilter.isEmpty()) {
-            try {
-                NodeKind requiredNodeKind = NodeKind.valueOf(kindFilter);
-                flowNodesList = flowNodesList.stream()
-                        .filter(node -> node.codedata().node() == requiredNodeKind)
-                        .toList();
-            } catch (IllegalArgumentException e) {
-                flowNodesList.clear();
-            }
+        // Exact-kind backstop: keeps correctness for kinds without a cheap pre-check (and CLASS_FIELD symbols,
+        // which are never pre-filtered).
+        if (requiredNodeKind != null) {
+            NodeKind finalKind = requiredNodeKind;
+            flowNodesList = flowNodesList.stream()
+                    .filter(node -> node.codedata().node() == finalKind)
+                    .toList();
         }
         return flowNodesList;
+    }
+
+    // Cheap pre-check mirroring the CommonUtils predicates: can this symbol's class type produce the requested
+    // connection kind? Returns true for kinds without a cheap predicate (the backstop filter then decides) and
+    // when the type can't be resolved, so we never skip a symbol that might legitimately match.
+    private static boolean symbolMatchesKind(Symbol symbol, NodeKind kind) {
+        try {
+            return switch (kind) {
+                case MODEL_PROVIDER -> isAiModelProvider(symbol);
+                case EMBEDDING_PROVIDER -> isAiEmbeddingProvider(symbol);
+                case VECTOR_STORE -> isAiVectorStore(symbol);
+                case KNOWLEDGE_BASE -> isAiKnowledgeBase(symbol);
+                case CHUNKER -> isAiChunker(symbol);
+                case SHORT_TERM_MEMORY_STORE -> isAiMemoryStore(symbol);
+                default -> true;
+            };
+        } catch (RuntimeException e) {
+            return true;
+        }
     }
 
     /**
