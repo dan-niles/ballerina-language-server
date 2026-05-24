@@ -302,10 +302,44 @@ public class FunctionDataBuilder {
             }
         }
 
+        // Resolve workspace-sibling packages locally first; they aren't in Central, so the Central path below
+        // would just fail after a slow network round-trip.
+        Optional<Package> workspacePackage = resolveWorkspacePackage();
+        if (workspacePackage.isPresent()) {
+            this.resolvedPackage(workspacePackage.get());
+            return;
+        }
+
         // For external functions: resolve from central repository
         Package resolvedPackage = PackageUtil.resolveModulePackage(
                 moduleInfo.org(), moduleInfo.packageName(), moduleInfo.version()).orElse(null);
         this.resolvedPackage(resolvedPackage);
+    }
+
+    // The workspace child package matching moduleInfo, if any. Best-effort; empty on failure.
+    private Optional<Package> resolveWorkspacePackage() {
+        if (project == null || moduleInfo == null || moduleInfo.org() == null) {
+            return Optional.empty();
+        }
+        try {
+            BallerinaCompilerApi compilerApi = BallerinaCompilerApi.getInstance();
+            Optional<Project> workspaceProject = compilerApi.getWorkspaceProject(project);
+            if (workspaceProject.isEmpty()) {
+                return Optional.empty();
+            }
+            for (Project childProject : compilerApi.getWorkspaceProjectsInOrder(workspaceProject.get())) {
+                Package currentPackage = childProject.currentPackage();
+                String currentPackageName = currentPackage.packageName().value();
+                if (currentPackage.packageOrg().value().equals(moduleInfo.org())
+                        && (currentPackageName.equals(moduleInfo.packageName())
+                                || currentPackageName.equals(moduleInfo.moduleName()))) {
+                    return Optional.of(currentPackage);
+                }
+            }
+        } catch (Throwable t) {
+            // Best-effort: fall back to Central resolution.
+        }
+        return Optional.empty();
     }
 
     private void updateModuleInfo() {
