@@ -1733,6 +1733,10 @@ public class CodeAnalyzer extends NodeVisitor {
                 genAgentData(implicitAgentExpr, classSymbol, new HashMap<>(), false);
             }
         }
+
+        if (kind == NodeKind.AGENT_TYPE) {
+            AiUtils.applyAgentTypeMetadata(nodeBuilder, classSymbol, argumentNodes, project, this::getModelIconUrl);
+        }
     }
 
     /**

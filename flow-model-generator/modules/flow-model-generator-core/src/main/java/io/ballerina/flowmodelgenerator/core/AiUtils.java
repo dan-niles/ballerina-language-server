@@ -26,17 +26,37 @@ import io.ballerina.centralconnector.response.DependentPackage;
 import io.ballerina.compiler.api.ModuleID;
 import io.ballerina.compiler.api.SemanticModel;
 import io.ballerina.compiler.api.symbols.AnnotationAttachmentSymbol;
+import io.ballerina.compiler.api.symbols.ClassFieldSymbol;
 import io.ballerina.compiler.api.symbols.ClassSymbol;
 import io.ballerina.compiler.api.symbols.Documentation;
 import io.ballerina.compiler.api.symbols.FunctionTypeSymbol;
+import io.ballerina.compiler.api.symbols.MethodSymbol;
 import io.ballerina.compiler.api.symbols.ModuleSymbol;
 import io.ballerina.compiler.api.symbols.ParameterSymbol;
 import io.ballerina.compiler.api.symbols.Qualifier;
 import io.ballerina.compiler.api.symbols.StreamTypeSymbol;
 import io.ballerina.compiler.api.symbols.TypeDescKind;
+import io.ballerina.compiler.api.symbols.TypeReferenceTypeSymbol;
 import io.ballerina.compiler.api.symbols.TypeSymbol;
 import io.ballerina.compiler.api.symbols.UnionTypeSymbol;
 import io.ballerina.compiler.api.values.ConstantValue;
+import io.ballerina.compiler.syntax.tree.AssignmentStatementNode;
+import io.ballerina.compiler.syntax.tree.CheckExpressionNode;
+import io.ballerina.compiler.syntax.tree.ExpressionNode;
+import io.ballerina.compiler.syntax.tree.FieldAccessExpressionNode;
+import io.ballerina.compiler.syntax.tree.FunctionArgumentNode;
+import io.ballerina.compiler.syntax.tree.FunctionBodyBlockNode;
+import io.ballerina.compiler.syntax.tree.FunctionDefinitionNode;
+import io.ballerina.compiler.syntax.tree.ImplicitNewExpressionNode;
+import io.ballerina.compiler.syntax.tree.ModulePartNode;
+import io.ballerina.compiler.syntax.tree.NamedArgumentNode;
+import io.ballerina.compiler.syntax.tree.NonTerminalNode;
+import io.ballerina.compiler.syntax.tree.ParenthesizedArgList;
+import io.ballerina.compiler.syntax.tree.PositionalArgumentNode;
+import io.ballerina.compiler.syntax.tree.SeparatedNodeList;
+import io.ballerina.compiler.syntax.tree.SimpleNameReferenceNode;
+import io.ballerina.compiler.syntax.tree.StatementNode;
+import io.ballerina.compiler.syntax.tree.SyntaxKind;
 import io.ballerina.flowmodelgenerator.core.model.AvailableNode;
 import io.ballerina.flowmodelgenerator.core.model.Codedata;
 import io.ballerina.flowmodelgenerator.core.model.FlowNode;
@@ -47,10 +67,12 @@ import io.ballerina.flowmodelgenerator.core.model.Option;
 import io.ballerina.flowmodelgenerator.core.model.Property;
 import io.ballerina.flowmodelgenerator.core.model.PropertyType;
 import io.ballerina.flowmodelgenerator.core.model.SourceBuilder;
+import io.ballerina.flowmodelgenerator.core.utils.ParamUtils;
 import io.ballerina.modelgenerator.commons.CommonUtils;
 import io.ballerina.modelgenerator.commons.ModuleInfo;
 import io.ballerina.modelgenerator.commons.PackageUtil;
 import io.ballerina.projects.DependenciesToml;
+import io.ballerina.projects.Document;
 import io.ballerina.projects.PackageDescriptor;
 import io.ballerina.projects.PackageName;
 import io.ballerina.projects.PackageOrg;
@@ -61,6 +83,8 @@ import io.ballerina.projects.environment.PackageResolver;
 import io.ballerina.projects.environment.ResolutionOptions;
 import io.ballerina.projects.environment.ResolutionRequest;
 import io.ballerina.projects.environment.ResolutionResponse;
+import io.ballerina.tools.diagnostics.Location;
+import org.ballerinalang.langserver.commons.BallerinaCompilerApi;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -79,6 +103,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -1206,5 +1231,238 @@ public class AiUtils {
                     && "Response".equals(name.get());
         }
         return false;
+    }
+
+    // ===== Custom agent (AGENT_TYPE) node metadata =====
+
+    // Frontend metadata keys consumed by the simplified AGENT_TYPE node widget.
+    public static final String AGENT_DESCRIPTION_KEY = "agentDescription";
+    public static final String MODEL_PROVIDER_PARAM_KEY = "modelProviderParam";
+    private static final String MODEL_METADATA_KEY = "model";
+    private static final String MODEL_PROVIDER_INTERFACE_NAME = "ModelProvider";
+    private static final String MODEL_ARG_NAME = "model";
+    private static final String INIT_METHOD_NAME = "init";
+
+    /**
+     * A custom agent init parameter that is wired to the inner {@code ai:Agent}'s model provider.
+     *
+     * @param name  the parameter name (also the node's property key)
+     * @param index the parameter's positional index in the init signature
+     */
+    public record ModelProviderParam(String name, int index) {
+
+    }
+
+    /**
+     * Populates the metadata for a custom agent (AGENT_TYPE) declaration node: the class doc-comment description, and —
+     * when the model provider is genuinely wired into the inner {@code ai:Agent} — the model-provider param (which
+     * drives the editable circle, hides the field in the box form, and carries the resolved icon).
+     *
+     * @param modelIconResolver resolves the instantiation's model argument to the icon metadata object (or null)
+     */
+    public static void applyAgentTypeMetadata(NodeBuilder nodeBuilder, ClassSymbol classSymbol,
+                                              SeparatedNodeList<FunctionArgumentNode> argumentNodes, Project project,
+                                              Function<ExpressionNode, Object> modelIconResolver) {
+        getCustomAgentDescription(classSymbol)
+                .ifPresent(description -> nodeBuilder.metadata().addData(AGENT_DESCRIPTION_KEY, description));
+
+        Optional<ModelProviderParam> wired = findWiredModelProviderParam(classSymbol, project);
+        if (wired.isEmpty()) {
+            return;
+        }
+        String paramKey = ParamUtils.removeLeadingSingleQuote(wired.get().name());
+        nodeBuilder.metadata().addData(MODEL_PROVIDER_PARAM_KEY, paramKey);
+
+        ExpressionNode modelArg = getModelProviderArgument(argumentNodes, wired.get());
+        if (modelArg != null) {
+            Object modelData = modelIconResolver.apply(modelArg);
+            if (modelData != null) {
+                nodeBuilder.metadata().addData(MODEL_METADATA_KEY, modelData);
+            }
+        }
+
+        Property property = nodeBuilder.properties().build().get(paramKey);
+        if (property != null) {
+            addPropertyFromTemplate(nodeBuilder, paramKey, property, null, true);
+        }
+    }
+
+    // The class doc-comment description (stripped, non-empty), if any.
+    private static Optional<String> getCustomAgentDescription(ClassSymbol classSymbol) {
+        return classSymbol.documentation()
+                .flatMap(Documentation::description)
+                .map(String::strip)
+                .filter(description -> !description.isEmpty());
+    }
+
+    // Strict check: init has an ai:ModelProvider param, the class has an ai:Agent field, and the init body assigns
+    // that field `new ai:Agent(model = <param>, ...)`. Returns that param (name + index), else empty.
+    private static Optional<ModelProviderParam> findWiredModelProviderParam(ClassSymbol classSymbol, Project project) {
+        Optional<MethodSymbol> initMethodOpt = classSymbol.initMethod();
+        if (initMethodOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        MethodSymbol initMethod = initMethodOpt.get();
+
+        List<ParameterSymbol> params = initMethod.typeDescriptor().params().orElse(List.of());
+        Map<String, Integer> modelProviderParams = new HashMap<>();
+        for (int i = 0; i < params.size(); i++) {
+            ParameterSymbol param = params.get(i);
+            if (param.getName().isPresent() && isModelProviderType(param.typeDescriptor())) {
+                modelProviderParams.put(param.getName().get(), i);
+            }
+        }
+        if (modelProviderParams.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Set<String> agentFields = new HashSet<>();
+        for (Map.Entry<String, ClassFieldSymbol> entry : classSymbol.fieldDescriptors().entrySet()) {
+            if (CommonUtils.isAgentClass(entry.getValue().typeDescriptor())) {
+                agentFields.add(entry.getKey());
+            }
+        }
+        if (agentFields.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Optional<FunctionBodyBlockNode> bodyOpt = getInitBody(classSymbol, initMethod, project);
+        if (bodyOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        for (StatementNode stmt : bodyOpt.get().statements()) {
+            if (!(stmt instanceof AssignmentStatementNode assign)
+                    || !(assign.varRef() instanceof FieldAccessExpressionNode fieldAccess)
+                    || !(fieldAccess.fieldName() instanceof SimpleNameReferenceNode fieldRef)) {
+                continue;
+            }
+            if (!agentFields.contains(fieldRef.name().text())) {
+                continue;
+            }
+            Optional<ImplicitNewExpressionNode> newExpr = getImplicitNewExpr(assign.expression());
+            if (newExpr.isEmpty()) {
+                continue;
+            }
+            Optional<String> modelRef = getInnerAgentModelArgRef(newExpr.get());
+            if (modelRef.isPresent() && modelProviderParams.containsKey(modelRef.get())) {
+                String name = modelRef.get();
+                return Optional.of(new ModelProviderParam(name, modelProviderParams.get(name)));
+            }
+        }
+        return Optional.empty();
+    }
+
+    // Whether the type is the ballerina/ai:ModelProvider interface.
+    private static boolean isModelProviderType(TypeSymbol typeSymbol) {
+        if (typeSymbol instanceof TypeReferenceTypeSymbol typeRef
+                && typeRef.definition().nameEquals(MODEL_PROVIDER_INTERFACE_NAME)) {
+            return typeRef.getModule()
+                    .map(ModuleSymbol::id)
+                    .filter(id -> CommonUtils.isAiModule(id.orgName(), id.packageName()))
+                    .isPresent();
+        }
+        return false;
+    }
+
+    // The simple-name ref passed as the `model` named arg of an inner `new (model = ..., ...)`, if present.
+    private static Optional<String> getInnerAgentModelArgRef(ImplicitNewExpressionNode newExpr) {
+        Optional<ParenthesizedArgList> argList = newExpr.parenthesizedArgList();
+        if (argList.isEmpty()) {
+            return Optional.empty();
+        }
+        for (FunctionArgumentNode arg : argList.get().arguments()) {
+            if (arg instanceof NamedArgumentNode named
+                    && named.argumentName().name().text().equals(MODEL_ARG_NAME)
+                    && named.expression() instanceof SimpleNameReferenceNode simpleRef) {
+                return Optional.of(simpleRef.name().text());
+            }
+        }
+        return Optional.empty();
+    }
+
+    // The instantiation argument bound to the wired model provider param (named or positional).
+    private static ExpressionNode getModelProviderArgument(SeparatedNodeList<FunctionArgumentNode> argumentNodes,
+                                                           ModelProviderParam param) {
+        if (argumentNodes == null) {
+            return null;
+        }
+        int positional = 0;
+        for (FunctionArgumentNode arg : argumentNodes) {
+            if (arg instanceof NamedArgumentNode named) {
+                if (named.argumentName().name().text().equals(param.name())) {
+                    return named.expression();
+                }
+            } else if (arg instanceof PositionalArgumentNode pos) {
+                if (positional == param.index()) {
+                    return pos.expression();
+                }
+                positional++;
+            }
+        }
+        return null;
+    }
+
+    // The init method's block body. The class may live in a sibling workspace package, so resolve the document from
+    // the project that owns the class (not necessarily the project being analyzed).
+    private static Optional<FunctionBodyBlockNode> getInitBody(ClassSymbol classSymbol, MethodSymbol initMethod,
+                                                               Project project) {
+        Optional<Location> locOpt = initMethod.getLocation();
+        if (locOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        Location loc = locOpt.get();
+        for (Project candidate : getProjectsOwningClass(classSymbol, project)) {
+            Document document = CommonUtils.getDocument(candidate, loc);
+            if (document == null) {
+                continue;
+            }
+            NonTerminalNode node = ((ModulePartNode) document.syntaxTree().rootNode()).findNode(loc.textRange());
+            while (node != null && !(node instanceof FunctionDefinitionNode)) {
+                node = node.parent();
+            }
+            if (node instanceof FunctionDefinitionNode funcDef
+                    && funcDef.functionName().text().equals(INIT_METHOD_NAME)
+                    && funcDef.functionBody() instanceof FunctionBodyBlockNode body) {
+                return Optional.of(body);
+            }
+        }
+        return Optional.empty();
+    }
+
+    // The current project plus any workspace child project whose package matches the class's module.
+    private static List<Project> getProjectsOwningClass(ClassSymbol classSymbol, Project project) {
+        List<Project> projects = new ArrayList<>();
+        projects.add(project);
+        Optional<ModuleID> moduleId = classSymbol.getModule().map(ModuleSymbol::id);
+        if (moduleId.isEmpty()) {
+            return projects;
+        }
+        try {
+            BallerinaCompilerApi compilerApi = BallerinaCompilerApi.getInstance();
+            Optional<Project> workspaceProject = compilerApi.getWorkspaceProject(project);
+            if (workspaceProject.isPresent()) {
+                for (Project child : compilerApi.getWorkspaceProjectsInOrder(workspaceProject.get())) {
+                    if (child.currentPackage().packageOrg().value().equals(moduleId.get().orgName())
+                            && child.currentPackage().packageName().value().equals(moduleId.get().packageName())) {
+                        projects.add(child);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            // Best-effort: fall back to the current project only.
+        }
+        return projects;
+    }
+
+    // Unwraps `check new (...)` / `new (...)` to the implicit-new expression (the inner agent's construction).
+    private static Optional<ImplicitNewExpressionNode> getImplicitNewExpr(ExpressionNode expression) {
+        ExpressionNode expr = expression;
+        if (expr.kind() == SyntaxKind.CHECK_EXPRESSION) {
+            expr = ((CheckExpressionNode) expr).expression();
+        }
+        if (expr instanceof ImplicitNewExpressionNode implicitNew) {
+            return Optional.of(implicitNew);
+        }
+        return Optional.empty();
     }
 }
