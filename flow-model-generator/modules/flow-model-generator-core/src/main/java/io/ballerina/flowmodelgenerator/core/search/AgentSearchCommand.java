@@ -72,7 +72,7 @@ import java.util.Set;
 public class AgentSearchCommand extends SearchCommand {
 
     private static final Gson GSON = new Gson();
-    private static final String KEYWORD = "\"Type/Agent\"";
+    private static final String AGENT_KEYWORD_FILTER = "keywords:\"Type/Agent\"";
     private static final String CENTRAL_AGENTS_CATEGORY = "Central Agents";
     private static final String LOCAL_AGENTS_CATEGORY = "Local Agents";
     private static final String INIT_SYMBOL = "init";
@@ -172,7 +172,7 @@ public class AgentSearchCommand extends SearchCommand {
     // ------------------------------------------------------------------
 
     private List<Item> getAllAgents(String searchQuery) {
-        List<AvailableNode> centralAgents = filterByLabel(fetchAgentsFromCentral(searchQuery, null), searchQuery);
+        List<AvailableNode> centralAgents = fetchAgentsFromCentral(searchQuery, null);
         if (!centralAgents.isEmpty()) {
             Category.Builder centralBuilder = rootBuilder.stepIn(CENTRAL_AGENTS_CATEGORY, null, null);
             centralAgents.forEach(centralBuilder::node);
@@ -197,7 +197,7 @@ public class AgentSearchCommand extends SearchCommand {
             return rootBuilder.build().items();
         }
 
-        List<AvailableNode> agents = filterByLabel(fetchAgentsFromCentral(searchQuery, currentOrg), searchQuery);
+        List<AvailableNode> agents = fetchAgentsFromCentral(searchQuery, currentOrg);
         if (agents.isEmpty()) {
             return rootBuilder.build().items();
         }
@@ -252,13 +252,13 @@ public class AgentSearchCommand extends SearchCommand {
     private PackageResponse getPackageResponse(String searchQuery, String org) {
         CentralAPI centralClient = RemoteCentral.getInstance();
         Map<String, String> centralQueryMap = new HashMap<>();
-        centralQueryMap.put("keyword", KEYWORD);
+        String q = (searchQuery == null || searchQuery.isEmpty())
+                ? AGENT_KEYWORD_FILTER
+                : searchQuery + " AND " + AGENT_KEYWORD_FILTER;
+        centralQueryMap.put("q", q);
         centralQueryMap.put("limit", String.valueOf(limit));
         centralQueryMap.put("offset", String.valueOf(offset));
 
-        if (searchQuery != null && !searchQuery.isEmpty()) {
-            centralQueryMap.put("q", searchQuery);
-        }
         if (org != null && !org.isEmpty()) {
             centralQueryMap.put("org", org);
         }
@@ -283,16 +283,6 @@ public class AgentSearchCommand extends SearchCommand {
                 .build();
 
         return new AvailableNode(metadata, codedata, true);
-    }
-
-    private static List<AvailableNode> filterByLabel(List<AvailableNode> agents, String searchQuery) {
-        if (searchQuery == null || searchQuery.isEmpty()) {
-            return agents;
-        }
-        String lowered = searchQuery.toLowerCase(Locale.ROOT);
-        return agents.stream()
-                .filter(agent -> agent.metadata().label().toLowerCase(Locale.ROOT).contains(lowered))
-                .toList();
     }
 
     // ------------------------------------------------------------------
