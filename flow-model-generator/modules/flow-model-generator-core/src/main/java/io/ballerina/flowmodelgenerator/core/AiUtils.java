@@ -35,6 +35,7 @@ import io.ballerina.compiler.api.symbols.ModuleSymbol;
 import io.ballerina.compiler.api.symbols.ParameterSymbol;
 import io.ballerina.compiler.api.symbols.Qualifier;
 import io.ballerina.compiler.api.symbols.StreamTypeSymbol;
+import io.ballerina.compiler.api.symbols.Symbol;
 import io.ballerina.compiler.api.symbols.TypeDescKind;
 import io.ballerina.compiler.api.symbols.TypeReferenceTypeSymbol;
 import io.ballerina.compiler.api.symbols.TypeSymbol;
@@ -65,6 +66,7 @@ import io.ballerina.flowmodelgenerator.core.model.NodeBuilder;
 import io.ballerina.flowmodelgenerator.core.model.NodeKind;
 import io.ballerina.flowmodelgenerator.core.model.Option;
 import io.ballerina.flowmodelgenerator.core.model.Property;
+import io.ballerina.flowmodelgenerator.core.model.PropertyCodedata;
 import io.ballerina.flowmodelgenerator.core.model.PropertyType;
 import io.ballerina.flowmodelgenerator.core.model.SourceBuilder;
 import io.ballerina.flowmodelgenerator.core.utils.ParamUtils;
@@ -73,6 +75,7 @@ import io.ballerina.modelgenerator.commons.ModuleInfo;
 import io.ballerina.modelgenerator.commons.PackageUtil;
 import io.ballerina.projects.DependenciesToml;
 import io.ballerina.projects.Document;
+import io.ballerina.projects.Package;
 import io.ballerina.projects.PackageDescriptor;
 import io.ballerina.projects.PackageName;
 import io.ballerina.projects.PackageOrg;
@@ -1238,6 +1241,9 @@ public class AiUtils {
     // Frontend metadata keys consumed by the simplified AGENT_TYPE node widget.
     public static final String AGENT_DESCRIPTION_KEY = "agentDescription";
     public static final String MODEL_PROVIDER_PARAM_KEY = "modelProviderParam";
+    // Property-codedata data key holding the backing connector's Codedata for a connection-select param. The
+    // frontend reads it at `property.codedata.data.connection`.
+    private static final String CONNECTION_DATA_KEY = "connection";
     private static final String MODEL_METADATA_KEY = "model";
     private static final String MODEL_PROVIDER_INTERFACE_NAME = "ModelProvider";
     private static final String MODEL_ARG_NAME = "model";
@@ -1266,6 +1272,9 @@ public class AiUtils {
         getCustomAgentDescription(classSymbol)
                 .ifPresent(description -> nodeBuilder.metadata().addData(AGENT_DESCRIPTION_KEY, description));
 
+        // Render init params typed as a client connection (e.g. calendar:Client) as a connection select.
+        markClientConnectionParams(nodeBuilder, classSymbol);
+
         Optional<ModelProviderParam> wired = findWiredModelProviderParam(classSymbol, project);
         if (wired.isEmpty()) {
             return;
@@ -1285,6 +1294,136 @@ public class AiUtils {
         if (property != null) {
             addPropertyFromTemplate(nodeBuilder, paramKey, property, null, true);
         }
+    }
+
+    /**
+     * Template-path variant: resolves the agent class by name (workspace-aware) from the node codedata, then marks
+     * its client-connection init params. Used by {@code AgentTypeBuilder} where no analyzed {@link ClassSymbol} is
+     * available yet (the declaration doesn't exist during create/configure).
+     */
+    public static void markClientConnectionParams(NodeBuilder nodeBuilder, Codedata codedata, Project project) {
+        if (codedata == null || codedata.object() == null) {
+            return;
+        }
+        resolveClass(codedata, project)
+                .ifPresent(classSymbol -> markClientConnectionParams(nodeBuilder, classSymbol));
+    }
+
+    // For each init param whose type is an instantiable client class (e.g. calendar:Client), stamp the param's
+    // Property with the connector identity (node = NEW_CONNECTION + module/object), which the frontend reads to
+    // render a connection select (existing connections of that type + "Create New ..."). Non-client params are
+    // left untouched and keep their default expression editor.
+    private static void markClientConnectionParams(NodeBuilder nodeBuilder, ClassSymbol classSymbol) {
+        Optional<MethodSymbol> initMethodOpt = classSymbol.initMethod();
+        if (initMethodOpt.isEmpty()) {
+            return;
+        }
+        List<ParameterSymbol> params = initMethodOpt.get().typeDescriptor().params().orElse(List.of());
+        Map<String, Property> builtProps = nodeBuilder.properties().build();
+        for (ParameterSymbol param : params) {
+            if (param.getName().isEmpty()) {
+                continue;
+            }
+            Optional<ClassSymbol> clientClass = getClientClass(param.typeDescriptor());
+            if (clientClass.isEmpty()) {
+                continue;
+            }
+            String key = ParamUtils.removeLeadingSingleQuote(param.getName().get());
+            Property property = builtProps.get(key);
+            if (property == null) {
+                continue;
+            }
+            PropertyCodedata connectorCodedata = buildConnectorCodedata(clientClass.get(), property.codedata());
+            if (connectorCodedata == null) {
+                continue;
+            }
+            builtProps.put(key, copyPropertyWithCodedata(property, connectorCodedata));
+        }
+    }
+
+    // Resolves a type to its client ClassSymbol, i.e. a concrete class carrying the `client` qualifier. Returns
+    // empty for non-client types and for anonymous `client object {...}` types (not classes) — those fall back to
+    // the plain expression editor.
+    private static Optional<ClassSymbol> getClientClass(TypeSymbol typeSymbol) {
+        TypeSymbol raw = typeSymbol instanceof TypeReferenceTypeSymbol typeRef ? typeRef.typeDescriptor() : typeSymbol;
+        if (raw instanceof ClassSymbol classSymbol && classSymbol.qualifiers().contains(Qualifier.CLIENT)) {
+            return Optional.of(classSymbol);
+        }
+        return Optional.empty();
+    }
+
+    // Stashes the backing connector's full Codedata (NEW_CONNECTION + module/object/version, instantiable via init,
+    // not generated) under the param codedata's `data.connection`, preserving the existing property-codedata fields.
+    private static PropertyCodedata buildConnectorCodedata(ClassSymbol clientClass, PropertyCodedata existing) {
+        Optional<ModuleSymbol> module = clientClass.getModule();
+        Optional<String> className = clientClass.getName();
+        if (module.isEmpty() || className.isEmpty()) {
+            return null;
+        }
+        ModuleInfo moduleInfo = ModuleInfo.from(module.get().id());
+        Codedata connector = new Codedata.Builder<>(null)
+                .node(NodeKind.NEW_CONNECTION)
+                .org(moduleInfo.org())
+                .module(moduleInfo.moduleName())
+                .packageName(moduleInfo.packageName())
+                .object(className.get())
+                .symbol(INIT_METHOD_NAME)
+                .version(moduleInfo.version())
+                .isGenerated(false)
+                .build();
+        PropertyCodedata.Builder<Object> builder = new PropertyCodedata.Builder<>(null);
+        if (existing != null) {
+            builder.kind(existing.kind())
+                    .originalName(existing.originalName())
+                    .dependentProperty(existing.dependentProperty())
+                    .lineRange(existing.lineRange());
+        }
+        return builder.addData(CONNECTION_DATA_KEY, connector).build();
+    }
+
+    // Copy of the property with the connection codedata, dropping the param's type import. The agent declaration
+    // passes the connection by variable reference (or an implicit `new`), so the connector module is never named at
+    // the instantiation site — keeping the import here would make source-gen add a spurious import to agents.bal.
+    private static Property copyPropertyWithCodedata(Property property, PropertyCodedata codedata) {
+        return new Property(
+                property.metadata(),
+                property.types(),
+                property.value(),
+                property.oldValue(),
+                property.placeholder(),
+                property.optional(),
+                property.editable(),
+                property.advanced(),
+                property.hidden(),
+                property.modified(),
+                property.diagnostics(),
+                codedata,
+                property.advancedValue(),
+                null,
+                property.defaultValue(),
+                property.comment()
+        );
+    }
+
+    // Finds the class named codedata.object in the project (or a workspace sibling matching codedata's org/package).
+    private static Optional<ClassSymbol> resolveClass(Codedata codedata, Project project) {
+        String className = codedata.object();
+        for (Project candidate : getProjectsForModule(codedata.org(), codedata.packageName(), project)) {
+            try {
+                Package pkg = candidate.currentPackage();
+                SemanticModel semanticModel = PackageUtil.getCompilation(pkg)
+                        .getSemanticModel(pkg.getDefaultModule().moduleId());
+                for (Symbol symbol : semanticModel.moduleSymbols()) {
+                    if (symbol instanceof ClassSymbol classSymbol
+                            && classSymbol.getName().filter(className::equals).isPresent()) {
+                        return Optional.of(classSymbol);
+                    }
+                }
+            } catch (Throwable t) {
+                // Try the next candidate.
+            }
+        }
+        return Optional.empty();
     }
 
     // The class doc-comment description (stripped, non-empty), if any.
@@ -1431,10 +1570,18 @@ public class AiUtils {
 
     // The current project plus any workspace child project whose package matches the class's module.
     private static List<Project> getProjectsOwningClass(ClassSymbol classSymbol, Project project) {
-        List<Project> projects = new ArrayList<>();
-        projects.add(project);
         Optional<ModuleID> moduleId = classSymbol.getModule().map(ModuleSymbol::id);
         if (moduleId.isEmpty()) {
+            return List.of(project);
+        }
+        return getProjectsForModule(moduleId.get().orgName(), moduleId.get().packageName(), project);
+    }
+
+    // The current project plus any workspace sibling whose package matches the given org/package name.
+    private static List<Project> getProjectsForModule(String org, String packageName, Project project) {
+        List<Project> projects = new ArrayList<>();
+        projects.add(project);
+        if (org == null || packageName == null) {
             return projects;
         }
         try {
@@ -1442,8 +1589,8 @@ public class AiUtils {
             Optional<Project> workspaceProject = compilerApi.getWorkspaceProject(project);
             if (workspaceProject.isPresent()) {
                 for (Project child : compilerApi.getWorkspaceProjectsInOrder(workspaceProject.get())) {
-                    if (child.currentPackage().packageOrg().value().equals(moduleId.get().orgName())
-                            && child.currentPackage().packageName().value().equals(moduleId.get().packageName())) {
+                    if (org.equals(child.currentPackage().packageOrg().value())
+                            && packageName.equals(child.currentPackage().packageName().value())) {
                         projects.add(child);
                     }
                 }

@@ -21,16 +21,25 @@ package io.ballerina.flowmodelgenerator.core.model;
 
 import io.ballerina.tools.text.LineRange;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Represents the codedata of a property.
+ * <p>
+ * The {@code data} map carries optional additional metadata (mirroring the node-level {@code Codedata.data}). For a
+ * connection-select param it holds a {@code "connection"} entry whose value is the backing connector's
+ * {@code Codedata}; it is {@code null} for ordinary properties.
  *
  * @param kind              The kind of the property
  * @param originalName      The original name of the property
  * @param dependentProperty The property that is dependent for this property to be enabled
  * @param lineRange         The line range of the property
+ * @param data              Additional data (e.g. the connector identity for a connection-select param)
  * @since 1.0.0
  */
-public record PropertyCodedata(String kind, String originalName, String dependentProperty, LineRange lineRange) {
+public record PropertyCodedata(String kind, String originalName, String dependentProperty, LineRange lineRange,
+                               Map<String, Object> data) {
 
     public static class Builder<T> extends FacetedBuilder<T> {
 
@@ -38,6 +47,7 @@ public record PropertyCodedata(String kind, String originalName, String dependen
         private String originalName;
         private String dependentProperty;
         private LineRange lineRange;
+        private Map<String, Object> data;
 
         public Builder(T parentBuilder) {
             super(parentBuilder);
@@ -63,8 +73,16 @@ public record PropertyCodedata(String kind, String originalName, String dependen
             return this;
         }
 
+        public Builder<T> addData(String key, Object value) {
+            if (data == null) {
+                data = new LinkedHashMap<>();
+            }
+            data.put(key, value);
+            return this;
+        }
+
         public PropertyCodedata build() {
-            return new PropertyCodedata(kind, originalName, dependentProperty, lineRange);
+            return new PropertyCodedata(kind, originalName, dependentProperty, lineRange, data);
         }
     }
 }

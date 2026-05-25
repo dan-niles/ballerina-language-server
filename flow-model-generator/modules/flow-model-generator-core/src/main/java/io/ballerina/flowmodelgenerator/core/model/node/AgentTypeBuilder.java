@@ -21,6 +21,7 @@ package io.ballerina.flowmodelgenerator.core.model.node;
 import io.ballerina.flowmodelgenerator.core.AiUtils;
 import io.ballerina.flowmodelgenerator.core.model.NodeKind;
 import io.ballerina.flowmodelgenerator.core.model.Property;
+import io.ballerina.modelgenerator.commons.PackageUtil;
 import io.ballerina.projects.DocumentId;
 import io.ballerina.projects.Module;
 import io.ballerina.projects.Project;
@@ -62,6 +63,14 @@ public class AgentTypeBuilder extends ClassInitBuilder {
         TemplateContext resolvedContext = anchorToExistingFile(context);
         super.setConcreteTemplateData(resolvedContext);
         suggestResultVariableName(resolvedContext);
+        // Render client-connection init params (e.g. calendar:Client) as a connection select in the configure form.
+        try {
+            Project project = PackageUtil.loadProject(resolvedContext.workspaceManager(),
+                    resolvedContext.filePath());
+            AiUtils.markClientConnectionParams(this, resolvedContext.codedata(), project);
+        } catch (Throwable t) {
+            // Best-effort: client params keep their default expression editor.
+        }
     }
 
     // The class-init resolution + visible-symbol lookup need an existing document. When the target file doesn't

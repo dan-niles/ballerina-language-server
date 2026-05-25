@@ -110,6 +110,8 @@ public class ModelGenerator {
     );
     private static final String NODE_KIND_FILTER = "kind";
     private static final String EXACT_MATCH_FILTER = "exactMatch";
+    // Narrows a connection search (e.g. kind=NEW_CONNECTION) to variables of one client type (e.g. "calendar:Client").
+    private static final String CONNECTION_TYPE_FILTER = "connectionType";
 
     public ModelGenerator(Project project, SemanticModel model, Path filePath, WorkspaceManager workspaceManager) {
         this.semanticModel = model;
@@ -326,6 +328,9 @@ public class ModelGenerator {
         // Extract filter parameters
         String kindFilter = queryMap != null ? queryMap.get(NODE_KIND_FILTER) : null;
         String exactMatchFilter = queryMap != null ? queryMap.get(EXACT_MATCH_FILTER) : null;
+        String connectionTypeFilter = queryMap != null ? queryMap.get(CONNECTION_TYPE_FILTER) : null;
+        ModuleInfo userModuleInfo = connectionTypeFilter != null
+                ? ModuleInfo.from(document.module().descriptor()) : null;
 
         // Resolve the requested kind up front so non-matching symbols can be skipped before the costly build.
         NodeKind requiredNodeKind = null;
@@ -358,6 +363,10 @@ public class ModelGenerator {
                     && !symbolMatchesKind(symbol, requiredNodeKind)) {
                 continue;
             }
+            if (connectionTypeFilter != null && !symbolMatchesConnectionType(symbol, connectionTypeFilter,
+                    userModuleInfo)) {
+                continue;
+            }
             buildFlowNode(symbol).ifPresent(flowNodesList::add);
         }
 
@@ -370,6 +379,24 @@ public class ModelGenerator {
                     .toList();
         }
         return flowNodesList;
+    }
+
+    // Keeps only variables whose declared type signature equals the requested client type (e.g. "calendar:Client"),
+    // so a typed connection field lists only compatible connections — never, say, an http:Client for a calendar param.
+    private static boolean symbolMatchesConnectionType(Symbol symbol, String connectionType, ModuleInfo moduleInfo) {
+        TypeSymbol typeSymbol;
+        if (symbol instanceof VariableSymbol variableSymbol) {
+            typeSymbol = variableSymbol.typeDescriptor();
+        } else if (symbol instanceof ClassFieldSymbol classFieldSymbol) {
+            typeSymbol = classFieldSymbol.typeDescriptor();
+        } else {
+            return false;
+        }
+        try {
+            return connectionType.equals(CommonUtils.getTypeSignature(typeSymbol, moduleInfo));
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     // Cheap pre-check mirroring the CommonUtils predicates: can this symbol's class type produce the requested
