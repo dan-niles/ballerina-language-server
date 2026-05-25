@@ -20,6 +20,7 @@ package io.ballerina.flowmodelgenerator.core.search;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.reflect.TypeToken;
 import io.ballerina.centralconnector.CentralAPI;
 import io.ballerina.centralconnector.RemoteCentral;
 import io.ballerina.centralconnector.response.PackageResponse;
@@ -48,6 +49,7 @@ import io.ballerina.projects.Project;
 import io.ballerina.tools.text.LineRange;
 import org.ballerinalang.langserver.commons.BallerinaCompilerApi;
 
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -61,8 +63,7 @@ import java.util.Set;
  * Handles the search command for agents. Supports four source types:
  * <ul>
  *   <li>{@code default} - Searches pre-defined agents from LocalIndexCentral (JSON-based)</li>
- *   <li>{@code all} - Searches agents from Ballerina Central with "Type/Agent" keyword (any org)
- *       combined with agent classes defined across the current workspace</li>
+ *   <li>{@code all} - Curated landing list when no query, else Central "Type/Agent" search; plus workspace agents</li>
  *   <li>{@code organization} - Searches Ballerina Central agents scoped to the current project org</li>
  *   <li>{@code local} - Searches agent classes defined across the current workspace's projects</li>
  * </ul>
@@ -76,6 +77,8 @@ public class AgentSearchCommand extends SearchCommand {
     private static final String CENTRAL_AGENTS_CATEGORY = "Central Agents";
     private static final String LOCAL_AGENTS_CATEGORY = "Local Agents";
     private static final String INIT_SYMBOL = "init";
+    private static final String AGENTS_LANDING_JSON = "agents_landing.json";
+    private static final Type LANDING_AGENTS_TYPE = new TypeToken<List<AvailableNode>>() { }.getType();
 
     // Source type constants
     private static final String SOURCE_DEFAULT = "default";
@@ -91,6 +94,7 @@ public class AgentSearchCommand extends SearchCommand {
 
     private List<Item> cachedDefaultAgents;
     private List<AvailableNode> cachedCentralAgents;
+    private List<AvailableNode> cachedLandingAgents;
     private final String orgName;
     private final String source;
 
@@ -167,12 +171,29 @@ public class AgentSearchCommand extends SearchCommand {
         return List.of(agentCategory);
     }
 
+    // Curated pre-built agents bundled with the LS; the default popup view, no network.
+    private List<AvailableNode> getLandingAgents() {
+        if (cachedLandingAgents == null) {
+            try {
+                List<AvailableNode> landing =
+                        LocalIndexCentral.getInstance().readJsonResource(AGENTS_LANDING_JSON, LANDING_AGENTS_TYPE);
+                cachedLandingAgents = landing != null ? landing : List.of();
+            } catch (RuntimeException e) {
+                cachedLandingAgents = List.of();
+            }
+        }
+        return cachedLandingAgents;
+    }
+
     // ------------------------------------------------------------------
     // all source - central agents (any org) + workspace agents
     // ------------------------------------------------------------------
 
     private List<Item> getAllAgents(String searchQuery) {
-        List<AvailableNode> centralAgents = fetchAgentsFromCentral(searchQuery, null);
+        // No query: curated landing list. Query: Central search.
+        List<AvailableNode> centralAgents = (searchQuery == null || searchQuery.isEmpty())
+                ? getLandingAgents()
+                : fetchAgentsFromCentral(searchQuery, null);
         if (!centralAgents.isEmpty()) {
             Category.Builder centralBuilder = rootBuilder.stepIn(CENTRAL_AGENTS_CATEGORY, null, null);
             centralAgents.forEach(centralBuilder::node);
