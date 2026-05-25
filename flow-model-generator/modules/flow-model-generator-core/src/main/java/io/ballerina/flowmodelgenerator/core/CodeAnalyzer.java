@@ -1735,7 +1735,8 @@ public class CodeAnalyzer extends NodeVisitor {
         }
 
         if (kind == NodeKind.AGENT_TYPE) {
-            AiUtils.applyAgentTypeMetadata(nodeBuilder, classSymbol, argumentNodes, project, this::getModelIconUrl);
+            AiUtils.applyAgentTypeMetadata(nodeBuilder, classSymbol, argumentNodes, project, this::getModelIconUrl,
+                    this::getMemoryData);
         }
     }
 
@@ -2407,6 +2408,28 @@ public class CodeAnalyzer extends NodeVisitor {
         } else if (expressionNode.kind() == SyntaxKind.FIELD_ACCESS) {
             FieldAccessExpressionNode fieldAccessExpressionNode = (FieldAccessExpressionNode) expressionNode;
             return getModelIconUrl(fieldAccessExpressionNode.fieldName());
+        }
+        return null;
+    }
+
+    // Resolves a custom-agent (AGENT_TYPE) memory init argument to the memory metadata shown on the node. Mirrors the
+    // built-in agent's memory extraction in genAgentData: an explicit `new ai:Foo(size)` yields the type + size; a
+    // variable reference yields the variable's type name. Anything else (or unresolved) yields null -> no memory card.
+    private MemoryManagerData getMemoryData(ExpressionNode memory) {
+        if (memory == null) {
+            return null;
+        }
+        if (memory.kind() == SyntaxKind.EXPLICIT_NEW_EXPRESSION) {
+            ExplicitNewExpressionNode newExpr = (ExplicitNewExpressionNode) memory;
+            SeparatedNodeList<FunctionArgumentNode> arguments = newExpr.parenthesizedArgList().arguments();
+            String size = arguments.size() == 1 ? arguments.get(0).toSourceCode() : "";
+            return new MemoryManagerData(newExpr.typeDescriptor().toSourceCode(), size);
+        }
+        if (memory.kind() == SyntaxKind.SIMPLE_NAME_REFERENCE) {
+            return semanticModel.typeOf(memory)
+                    .map(typeSymbol -> new MemoryManagerData(typeSymbol.getName().orElse("Memory Not Configured"),
+                            AiUtils.MEMORY_DEFAULT_VALUE))
+                    .orElse(null);
         }
         return null;
     }

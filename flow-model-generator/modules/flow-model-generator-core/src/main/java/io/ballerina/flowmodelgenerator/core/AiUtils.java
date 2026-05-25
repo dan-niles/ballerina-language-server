@@ -1241,51 +1241,68 @@ public class AiUtils {
     // Frontend metadata keys consumed by the simplified AGENT_TYPE node widget.
     public static final String AGENT_DESCRIPTION_KEY = "agentDescription";
     public static final String MODEL_PROVIDER_PARAM_KEY = "modelProviderParam";
+    public static final String MEMORY_PARAM_KEY = "memoryParam";
     // Frontend reads the connector codedata at `property.codedata.data.connection`.
     private static final String CONNECTION_DATA_KEY = "connection";
     private static final String MODEL_METADATA_KEY = "model";
     private static final String MODEL_PROVIDER_INTERFACE_NAME = "ModelProvider";
     private static final String MODEL_ARG_NAME = "model";
+    private static final String MEMORY_METADATA_KEY = "memory";
+    private static final String MEMORY_INTERFACE_NAME = "Memory";
+    private static final String MEMORY_ARG_NAME = "memory";
     private static final String INIT_METHOD_NAME = "init";
 
     /**
-     * A custom agent init parameter that is wired to the inner {@code ai:Agent}'s model provider.
+     * A custom agent init parameter that is wired to one of the inner {@code ai:Agent}'s named arguments (e.g. its
+     * model provider or memory).
      *
      * @param name  the parameter name (also the node's property key)
      * @param index the parameter's positional index in the init signature
      */
-    public record ModelProviderParam(String name, int index) {
+    public record WiredParam(String name, int index) {
 
     }
 
     /**
      * Populates the metadata for a custom agent (AGENT_TYPE) declaration node: the class doc-comment description, and —
-     * when the model provider is genuinely wired into the inner {@code ai:Agent} — the model-provider param (which
-     * drives the editable circle, hides the field in the box form, and carries the resolved icon).
+     * when a model provider / memory is genuinely wired into the inner {@code ai:Agent} — the corresponding init param
+     * (which drives the editable circle / memory affordance, hides the field in the box form, and carries the resolved
+     * icon / memory data).
      *
      * @param modelIconResolver resolves the instantiation's model argument to the icon metadata object (or null)
+     * @param memoryDataResolver resolves the instantiation's memory argument to the memory metadata object (or null)
      */
     public static void applyAgentTypeMetadata(NodeBuilder nodeBuilder, ClassSymbol classSymbol,
                                               SeparatedNodeList<FunctionArgumentNode> argumentNodes, Project project,
-                                              Function<ExpressionNode, Object> modelIconResolver) {
+                                              Function<ExpressionNode, Object> modelIconResolver,
+                                              Function<ExpressionNode, Object> memoryDataResolver) {
         getCustomAgentDescription(classSymbol)
                 .ifPresent(description -> nodeBuilder.metadata().addData(AGENT_DESCRIPTION_KEY, description));
 
         // Render init params typed as a client connection (e.g. calendar:Client) as a connection select.
         markClientConnectionParams(nodeBuilder, classSymbol);
 
-        Optional<ModelProviderParam> wired = findWiredModelProviderParam(classSymbol, project);
-        if (wired.isEmpty()) {
-            return;
-        }
-        String paramKey = ParamUtils.removeLeadingSingleQuote(wired.get().name());
-        nodeBuilder.metadata().addData(MODEL_PROVIDER_PARAM_KEY, paramKey);
+        findWiredInnerAgentParam(classSymbol, project, MODEL_PROVIDER_INTERFACE_NAME, MODEL_ARG_NAME)
+                .ifPresent(wired -> applyWiredParam(nodeBuilder, argumentNodes, wired, MODEL_PROVIDER_PARAM_KEY,
+                        MODEL_METADATA_KEY, modelIconResolver));
+        findWiredInnerAgentParam(classSymbol, project, MEMORY_INTERFACE_NAME, MEMORY_ARG_NAME)
+                .ifPresent(wired -> applyWiredParam(nodeBuilder, argumentNodes, wired, MEMORY_PARAM_KEY,
+                        MEMORY_METADATA_KEY, memoryDataResolver));
+    }
 
-        ExpressionNode modelArg = getModelProviderArgument(argumentNodes, wired.get());
-        if (modelArg != null) {
-            Object modelData = modelIconResolver.apply(modelArg);
-            if (modelData != null) {
-                nodeBuilder.metadata().addData(MODEL_METADATA_KEY, modelData);
+    // Stamps a wired init param onto the node: the param-key metadata (drives the widget affordance), the resolved
+    // metadata for the value passed at this instantiation site, and hides the field from the box form.
+    private static void applyWiredParam(NodeBuilder nodeBuilder, SeparatedNodeList<FunctionArgumentNode> argumentNodes,
+                                        WiredParam wired, String paramMetadataKey, String valueMetadataKey,
+                                        Function<ExpressionNode, Object> valueResolver) {
+        String paramKey = ParamUtils.removeLeadingSingleQuote(wired.name());
+        nodeBuilder.metadata().addData(paramMetadataKey, paramKey);
+
+        ExpressionNode arg = getArgumentForParam(argumentNodes, wired);
+        if (arg != null && valueResolver != null) {
+            Object resolved = valueResolver.apply(arg);
+            if (resolved != null) {
+                nodeBuilder.metadata().addData(valueMetadataKey, resolved);
             }
         }
 
@@ -1425,9 +1442,11 @@ public class AiUtils {
                 .filter(description -> !description.isEmpty());
     }
 
-    // Strict check: init has an ai:ModelProvider param, the class has an ai:Agent field, and the init body assigns
-    // that field `new ai:Agent(model = <param>, ...)`. Returns that param (name + index), else empty.
-    private static Optional<ModelProviderParam> findWiredModelProviderParam(ClassSymbol classSymbol, Project project) {
+    // Strict check: init has a param typed ballerina/ai:<interfaceName>, the class has an ai:Agent field, and the init
+    // body assigns that field `new ai:Agent(<innerArgName> = <param>, ...)`. Returns that param (name + index), else
+    // empty. Used for both the model provider (ModelProvider/model) and memory (Memory/memory) wiring.
+    private static Optional<WiredParam> findWiredInnerAgentParam(ClassSymbol classSymbol, Project project,
+                                                                 String interfaceName, String innerArgName) {
         Optional<MethodSymbol> initMethodOpt = classSymbol.initMethod();
         if (initMethodOpt.isEmpty()) {
             return Optional.empty();
@@ -1435,14 +1454,14 @@ public class AiUtils {
         MethodSymbol initMethod = initMethodOpt.get();
 
         List<ParameterSymbol> params = initMethod.typeDescriptor().params().orElse(List.of());
-        Map<String, Integer> modelProviderParams = new HashMap<>();
+        Map<String, Integer> candidateParams = new HashMap<>();
         for (int i = 0; i < params.size(); i++) {
             ParameterSymbol param = params.get(i);
-            if (param.getName().isPresent() && isModelProviderType(param.typeDescriptor())) {
-                modelProviderParams.put(param.getName().get(), i);
+            if (param.getName().isPresent() && isAiInterfaceType(param.typeDescriptor(), interfaceName)) {
+                candidateParams.put(param.getName().get(), i);
             }
         }
-        if (modelProviderParams.isEmpty()) {
+        if (candidateParams.isEmpty()) {
             return Optional.empty();
         }
 
@@ -1473,19 +1492,19 @@ public class AiUtils {
             if (newExpr.isEmpty()) {
                 continue;
             }
-            Optional<String> modelRef = getInnerAgentModelArgRef(newExpr.get());
-            if (modelRef.isPresent() && modelProviderParams.containsKey(modelRef.get())) {
-                String name = modelRef.get();
-                return Optional.of(new ModelProviderParam(name, modelProviderParams.get(name)));
+            Optional<String> argRef = getInnerAgentNamedArgRef(newExpr.get(), innerArgName);
+            if (argRef.isPresent() && candidateParams.containsKey(argRef.get())) {
+                String name = argRef.get();
+                return Optional.of(new WiredParam(name, candidateParams.get(name)));
             }
         }
         return Optional.empty();
     }
 
-    // Whether the type is the ballerina/ai:ModelProvider interface.
-    private static boolean isModelProviderType(TypeSymbol typeSymbol) {
+    // Whether the type is the ballerina/ai:<interfaceName> object interface.
+    private static boolean isAiInterfaceType(TypeSymbol typeSymbol, String interfaceName) {
         if (typeSymbol instanceof TypeReferenceTypeSymbol typeRef
-                && typeRef.definition().nameEquals(MODEL_PROVIDER_INTERFACE_NAME)) {
+                && typeRef.definition().nameEquals(interfaceName)) {
             return typeRef.getModule()
                     .map(ModuleSymbol::id)
                     .filter(id -> CommonUtils.isAiModule(id.orgName(), id.packageName()))
@@ -1494,15 +1513,15 @@ public class AiUtils {
         return false;
     }
 
-    // The simple-name ref passed as the `model` named arg of an inner `new (model = ..., ...)`, if present.
-    private static Optional<String> getInnerAgentModelArgRef(ImplicitNewExpressionNode newExpr) {
+    // The simple-name ref passed as the `<argName>` named arg of an inner `new (<argName> = ..., ...)`, if present.
+    private static Optional<String> getInnerAgentNamedArgRef(ImplicitNewExpressionNode newExpr, String argName) {
         Optional<ParenthesizedArgList> argList = newExpr.parenthesizedArgList();
         if (argList.isEmpty()) {
             return Optional.empty();
         }
         for (FunctionArgumentNode arg : argList.get().arguments()) {
             if (arg instanceof NamedArgumentNode named
-                    && named.argumentName().name().text().equals(MODEL_ARG_NAME)
+                    && named.argumentName().name().text().equals(argName)
                     && named.expression() instanceof SimpleNameReferenceNode simpleRef) {
                 return Optional.of(simpleRef.name().text());
             }
@@ -1510,9 +1529,9 @@ public class AiUtils {
         return Optional.empty();
     }
 
-    // The instantiation argument bound to the wired model provider param (named or positional).
-    private static ExpressionNode getModelProviderArgument(SeparatedNodeList<FunctionArgumentNode> argumentNodes,
-                                                           ModelProviderParam param) {
+    // The instantiation argument bound to the given wired param (named or positional).
+    private static ExpressionNode getArgumentForParam(SeparatedNodeList<FunctionArgumentNode> argumentNodes,
+                                                      WiredParam param) {
         if (argumentNodes == null) {
             return null;
         }
