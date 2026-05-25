@@ -1241,8 +1241,7 @@ public class AiUtils {
     // Frontend metadata keys consumed by the simplified AGENT_TYPE node widget.
     public static final String AGENT_DESCRIPTION_KEY = "agentDescription";
     public static final String MODEL_PROVIDER_PARAM_KEY = "modelProviderParam";
-    // Property-codedata data key holding the backing connector's Codedata for a connection-select param. The
-    // frontend reads it at `property.codedata.data.connection`.
+    // Frontend reads the connector codedata at `property.codedata.data.connection`.
     private static final String CONNECTION_DATA_KEY = "connection";
     private static final String MODEL_METADATA_KEY = "model";
     private static final String MODEL_PROVIDER_INTERFACE_NAME = "ModelProvider";
@@ -1309,10 +1308,7 @@ public class AiUtils {
                 .ifPresent(classSymbol -> markClientConnectionParams(nodeBuilder, classSymbol));
     }
 
-    // For each init param whose type is an instantiable client class (e.g. calendar:Client), stamp the param's
-    // Property with the connector identity (node = NEW_CONNECTION + module/object), which the frontend reads to
-    // render a connection select (existing connections of that type + "Create New ..."). Non-client params are
-    // left untouched and keep their default expression editor.
+    // Stamp client-typed init params with the connector codedata so the frontend renders a connection select.
     private static void markClientConnectionParams(NodeBuilder nodeBuilder, ClassSymbol classSymbol) {
         Optional<MethodSymbol> initMethodOpt = classSymbol.initMethod();
         if (initMethodOpt.isEmpty()) {
@@ -1341,9 +1337,7 @@ public class AiUtils {
         }
     }
 
-    // Resolves a type to its client ClassSymbol, i.e. a concrete class carrying the `client` qualifier. Returns
-    // empty for non-client types and for anonymous `client object {...}` types (not classes) — those fall back to
-    // the plain expression editor.
+    // The client ClassSymbol for a type, i.e. a concrete class with the `client` qualifier (else empty).
     private static Optional<ClassSymbol> getClientClass(TypeSymbol typeSymbol) {
         TypeSymbol raw = typeSymbol instanceof TypeReferenceTypeSymbol typeRef ? typeRef.typeDescriptor() : typeSymbol;
         if (raw instanceof ClassSymbol classSymbol && classSymbol.qualifiers().contains(Qualifier.CLIENT)) {
@@ -1352,8 +1346,7 @@ public class AiUtils {
         return Optional.empty();
     }
 
-    // Stashes the backing connector's full Codedata (NEW_CONNECTION + module/object/version, instantiable via init,
-    // not generated) under the param codedata's `data.connection`, preserving the existing property-codedata fields.
+    // The connector's Codedata stashed under the param codedata's `data.connection`.
     private static PropertyCodedata buildConnectorCodedata(ClassSymbol clientClass, PropertyCodedata existing) {
         Optional<ModuleSymbol> module = clientClass.getModule();
         Optional<String> className = clientClass.getName();
@@ -1381,9 +1374,7 @@ public class AiUtils {
         return builder.addData(CONNECTION_DATA_KEY, connector).build();
     }
 
-    // Copy of the property with the connection codedata, dropping the param's type import. The agent declaration
-    // passes the connection by variable reference (or an implicit `new`), so the connector module is never named at
-    // the instantiation site — keeping the import here would make source-gen add a spurious import to agents.bal.
+    // Copy of the property with the connection codedata, dropping the param's type import (not needed here).
     private static Property copyPropertyWithCodedata(Property property, PropertyCodedata codedata) {
         return new Property(
                 property.metadata(),

@@ -381,8 +381,7 @@ public class ModelGenerator {
         return flowNodesList;
     }
 
-    // Keeps only variables whose declared type signature equals the requested client type (e.g. "calendar:Client"),
-    // so a typed connection field lists only compatible connections — never, say, an http:Client for a calendar param.
+    // True if the variable's type signature equals the requested client type (e.g. "calendar:Client").
     private static boolean symbolMatchesConnectionType(Symbol symbol, String connectionType, ModuleInfo moduleInfo) {
         TypeSymbol typeSymbol;
         if (symbol instanceof VariableSymbol variableSymbol) {

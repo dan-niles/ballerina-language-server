@@ -26,10 +26,6 @@ import java.util.Map;
 
 /**
  * Represents the codedata of a property.
- * <p>
- * The {@code data} map carries optional additional metadata (mirroring the node-level {@code Codedata.data}). For a
- * connection-select param it holds a {@code "connection"} entry whose value is the backing connector's
- * {@code Codedata}; it is {@code null} for ordinary properties.
  *
  * @param kind              The kind of the property
  * @param originalName      The original name of the property
