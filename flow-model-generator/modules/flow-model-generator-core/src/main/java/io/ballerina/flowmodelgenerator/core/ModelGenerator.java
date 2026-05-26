@@ -86,6 +86,7 @@ import static io.ballerina.modelgenerator.commons.CommonUtils.isAiEmbeddingProvi
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiFixedReturnAgent;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiInferredReturnAgent;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiKnowledgeBase;
+import static io.ballerina.modelgenerator.commons.CommonUtils.isAiMemory;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiMemoryStore;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiModelProvider;
 import static io.ballerina.modelgenerator.commons.CommonUtils.isAiVectorStore;
@@ -409,6 +410,7 @@ public class ModelGenerator {
                 case VECTOR_STORE -> isAiVectorStore(symbol);
                 case KNOWLEDGE_BASE -> isAiKnowledgeBase(symbol);
                 case CHUNKER -> isAiChunker(symbol);
+                case MEMORY -> isAiMemory(symbol);
                 case SHORT_TERM_MEMORY_STORE -> isAiMemoryStore(symbol);
                 default -> true;
             };
