@@ -471,21 +471,21 @@ public class AvailableNodesGenerator {
                     .map(moduleSymbol -> ModuleInfo.from(moduleSymbol.id()))
                     .orElse(null);
 
-            // Create and set the resolved package for the function
-            Optional<Package> resolvedPackage = moduleInfo != null ?
-                    PackageUtil.resolveModulePackage(moduleInfo.org(), moduleInfo.packageName(), moduleInfo.version()) :
-                    Optional.empty();
-
-            Optional<String> persistIcon = isPersistClient(classSymbol, semanticModel)
-                    ? getPersistDatabaseIcon(classSymbol) : Optional.empty();
+            boolean persistClient = isPersistClient(classSymbol, semanticModel);
+            Optional<String> persistIcon = persistClient ? getPersistDatabaseIcon(classSymbol) : Optional.empty();
             List<Item> methods = ConnectionActionProvider.getInstance().getActions(classSymbol, parentSymbolName,
                     pkg.project(), semanticModel, checkAgentToolCompatibility);
 
             Metadata.Builder<?> metadataBuilder = new Metadata.Builder<>(null)
                     .label(parentSymbolName);
-            if (isPersistClient(classSymbol, semanticModel)) {
+            if (persistClient) {
                 persistIcon.ifPresent(metadataBuilder::icon);
                 metadataBuilder.addData(CONNECTOR_TYPE, PERSIST);
+                // Only the persist path uses resolvedPackage; skip the costly Central lookup otherwise.
+                Optional<Package> resolvedPackage = moduleInfo != null
+                        ? PackageUtil.resolveModulePackage(moduleInfo.org(), moduleInfo.packageName(),
+                                moduleInfo.version())
+                        : Optional.empty();
                 getPersistModelFilePath(
                         resolvedPackage.map(p -> p.project().sourceRoot())
                                 .orElse(pkg.project().sourceRoot()),

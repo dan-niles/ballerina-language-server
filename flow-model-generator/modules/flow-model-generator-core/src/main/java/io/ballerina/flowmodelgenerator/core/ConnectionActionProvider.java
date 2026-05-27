@@ -48,6 +48,7 @@ import io.ballerina.projects.Module;
 import io.ballerina.projects.Package;
 import io.ballerina.projects.PackageDescriptor;
 import io.ballerina.projects.Project;
+import org.ballerinalang.langserver.commons.BallerinaCompilerApi;
 import org.ballerinalang.langserver.commons.workspace.WorkspaceManager;
 
 import java.io.IOException;
@@ -369,7 +370,38 @@ public class ConnectionActionProvider {
         if (project != null && isProjectModule(moduleInfo, project.currentPackage().descriptor())) {
             return Optional.of(project.currentPackage());
         }
+        // Workspace-sibling packages aren't in Central; resolve them locally before the Central fallback.
+        Optional<Package> workspacePackage = resolveWorkspacePackage(moduleInfo, project);
+        if (workspacePackage.isPresent()) {
+            return workspacePackage;
+        }
         return PackageUtil.resolveModulePackage(moduleInfo.org(), moduleInfo.packageName(), moduleInfo.version());
+    }
+
+    // The workspace child package matching moduleInfo, if any. Best-effort; empty on failure.
+    private Optional<Package> resolveWorkspacePackage(ModuleInfo moduleInfo, Project project) {
+        if (project == null || moduleInfo == null || moduleInfo.org() == null) {
+            return Optional.empty();
+        }
+        try {
+            BallerinaCompilerApi compilerApi = BallerinaCompilerApi.getInstance();
+            Optional<Project> workspaceProject = compilerApi.getWorkspaceProject(project);
+            if (workspaceProject.isEmpty()) {
+                return Optional.empty();
+            }
+            for (Project childProject : compilerApi.getWorkspaceProjectsInOrder(workspaceProject.get())) {
+                Package currentPackage = childProject.currentPackage();
+                String currentPackageName = currentPackage.packageName().value();
+                if (currentPackage.packageOrg().value().equals(moduleInfo.org())
+                        && (currentPackageName.equals(moduleInfo.packageName())
+                                || currentPackageName.equals(moduleInfo.moduleName()))) {
+                    return Optional.of(currentPackage);
+                }
+            }
+        } catch (Throwable t) {
+            // Best-effort: fall back to central resolution.
+        }
+        return Optional.empty();
     }
 
     private boolean isProjectModule(ModuleInfo moduleInfo, PackageDescriptor packageDescriptor) {
