@@ -1297,18 +1297,23 @@ public class CommonUtils {
     }
 
     private static ClassSymbol getClassSymbol(Symbol symbol) {
-        if (symbol instanceof ClassSymbol) {
-            return (ClassSymbol) symbol;
+        if (symbol instanceof ClassSymbol classSymbol) {
+            return classSymbol;
         }
-        TypeReferenceTypeSymbol typeDescriptorSymbol;
+        TypeSymbol typeDescriptor;
         if (symbol instanceof VariableSymbol variableSymbol) {
-            typeDescriptorSymbol = (TypeReferenceTypeSymbol) variableSymbol.typeDescriptor();
+            typeDescriptor = variableSymbol.typeDescriptor();
         } else if (symbol instanceof ParameterSymbol parameterSymbol) {
-            typeDescriptorSymbol = (TypeReferenceTypeSymbol) parameterSymbol.typeDescriptor();
+            typeDescriptor = parameterSymbol.typeDescriptor();
         } else {
             return null;
         }
-        return (ClassSymbol) typeDescriptorSymbol.typeDescriptor();
+        // A non-class type (e.g. a string variable) has no class symbol — return null instead of throwing.
+        if (typeDescriptor instanceof TypeReferenceTypeSymbol typeRef
+                && typeRef.typeDescriptor() instanceof ClassSymbol classSymbol) {
+            return classSymbol;
+        }
+        return null;
     }
 
     private static boolean hasAiTypeInclusion(ClassSymbol classSymbol, String includedTypeName) {
