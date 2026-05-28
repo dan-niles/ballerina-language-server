@@ -318,28 +318,11 @@ public class FunctionDataBuilder {
 
     // The workspace child package matching moduleInfo, if any. Best-effort; empty on failure.
     private Optional<Package> resolveWorkspacePackage() {
-        if (project == null || moduleInfo == null || moduleInfo.org() == null) {
+        if (moduleInfo == null) {
             return Optional.empty();
         }
-        try {
-            BallerinaCompilerApi compilerApi = BallerinaCompilerApi.getInstance();
-            Optional<Project> workspaceProject = compilerApi.getWorkspaceProject(project);
-            if (workspaceProject.isEmpty()) {
-                return Optional.empty();
-            }
-            for (Project childProject : compilerApi.getWorkspaceProjectsInOrder(workspaceProject.get())) {
-                Package currentPackage = childProject.currentPackage();
-                String currentPackageName = currentPackage.packageName().value();
-                if (currentPackage.packageOrg().value().equals(moduleInfo.org())
-                        && (currentPackageName.equals(moduleInfo.packageName())
-                                || currentPackageName.equals(moduleInfo.moduleName()))) {
-                    return Optional.of(currentPackage);
-                }
-            }
-        } catch (Throwable t) {
-            // Best-effort: fall back to Central resolution.
-        }
-        return Optional.empty();
+        return PackageUtil.findWorkspacePackage(project, moduleInfo.org(), moduleInfo.packageName(),
+                moduleInfo.moduleName());
     }
 
     private void updateModuleInfo() {

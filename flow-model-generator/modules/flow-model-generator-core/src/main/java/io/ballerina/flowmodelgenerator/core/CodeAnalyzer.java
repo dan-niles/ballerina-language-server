@@ -2149,7 +2149,10 @@ public class CodeAnalyzer extends NodeVisitor {
                         .name(functionName)
                         .functionSymbol(functionSymbol)
                         .semanticModel(semanticModel)
-                        .userModuleInfo(moduleInfo);
+                        .userModuleInfo(moduleInfo)
+                        .project(project)
+                        .workspaceManager(workspaceManager)
+                        .filePath(filePath);
         FunctionData functionData = functionDataBuilder.build();
 
         nodeBuilder
@@ -2215,7 +2218,10 @@ public class CodeAnalyzer extends NodeVisitor {
                                 .functionSymbol(functionSymbol)
                                 .functionResultKind(getFunctionResultKind(info.classSymbol()))
                                 .semanticModel(semanticModel)
-                                .userModuleInfo(moduleInfo);
+                                .userModuleInfo(moduleInfo)
+                                .project(project)
+                                .workspaceManager(workspaceManager)
+                                .filePath(filePath);
                 FunctionData functionData = functionDataBuilder.build();
 
                 processFunctionSymbol(functionCallExpressionNode, functionCallExpressionNode.arguments(),
@@ -2249,7 +2255,10 @@ public class CodeAnalyzer extends NodeVisitor {
                         .name(functionName)
                         .functionSymbol(functionSymbol)
                         .semanticModel(semanticModel)
-                        .userModuleInfo(moduleInfo);
+                        .userModuleInfo(moduleInfo)
+                        .project(project)
+                        .workspaceManager(workspaceManager)
+                        .filePath(filePath);
         FunctionData functionData = functionDataBuilder.build();
 
         processFunctionSymbol(functionCallExpressionNode, functionCallExpressionNode.arguments(), functionSymbol,
