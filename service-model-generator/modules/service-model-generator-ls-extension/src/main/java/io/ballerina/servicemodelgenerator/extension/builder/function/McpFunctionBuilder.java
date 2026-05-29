@@ -484,16 +484,15 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
 
         MappingConstructorExpressionNode mapping = toolAnnotation.annotValue().get();
         SpecificFieldNode descriptionField = null;
-        List<SpecificFieldNode> keptFields = new ArrayList<>();
+        // Source-code snippets so spread fields (...x), computed-name fields, etc. are preserved verbatim
+        // alongside ordinary SpecificFieldNode entries.
+        List<String> keptFieldSources = new ArrayList<>();
         for (MappingFieldNode field : mapping.fields()) {
-            if (!(field instanceof SpecificFieldNode specific)) {
-                keptFields.add(null);
-                continue;
-            }
-            if (DESCRIPTION_FIELD_NAME.equals(specific.fieldName().toString().trim())) {
+            if (field instanceof SpecificFieldNode specific
+                    && DESCRIPTION_FIELD_NAME.equals(specific.fieldName().toString().trim())) {
                 descriptionField = specific;
             } else {
-                keptFields.add(specific);
+                keptFieldSources.add(field.toSourceCode().trim());
             }
         }
 
@@ -512,20 +511,25 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
             function.getProperties().put(TOOL_DESCRIPTION_PROPERTY, buildToolDescriptionValue(literal));
         }
 
-        if (keptFields.stream().allMatch(f -> f == null)) {
+        if (keptFieldSources.isEmpty()) {
             // Annotation only contained the description we just hoisted; suppress emission on save.
             annotProperty.setEnabled(false);
             annotProperty.setEditable(true);
         } else {
-            annotProperty.setValue(buildAnnotationValue(keptFields));
+            annotProperty.setValue(buildAnnotationValue(keptFieldSources));
         }
     }
 
     private static AnnotationNode findToolAnnotation(MetadataNode metadata) {
         for (AnnotationNode annotation : metadata.annotations()) {
             String ref = annotation.annotReference().toString().trim();
-            String simple = ref.contains(":") ? ref.substring(ref.lastIndexOf(':') + 1) : ref;
-            if (TOOL_ANNOTATION_SIMPLE_NAME.equals(simple)) {
+            int colonIdx = ref.indexOf(':');
+            if (colonIdx < 0) {
+                continue;
+            }
+            String module = ref.substring(0, colonIdx).trim();
+            String simple = ref.substring(colonIdx + 1).trim();
+            if (MCP.equals(module) && TOOL_ANNOTATION_SIMPLE_NAME.equals(simple)) {
                 return annotation;
             }
         }
@@ -585,22 +589,19 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
     }
 
     /**
-     * Reconstructs a mapping-constructor source string from the kept {@link SpecificFieldNode}s. Each field is
-     * re-emitted via {@link SpecificFieldNode#toSourceCode()}, so nested values like a {@code map<json>} schema are
-     * preserved byte-for-byte. The result is the annotation value that {@code addFunctionAnnotationTextEdits} will
-     * splice back into source.
+     * Reconstructs a mapping-constructor source string from pre-captured field source snippets. Snippets come
+     * straight from {@link MappingFieldNode#toSourceCode()} so nested values like a {@code map<json>} schema, as
+     * well as spread fields, are preserved byte-for-byte. The result is the annotation value that
+     * {@code addFunctionAnnotationTextEdits} will splice back into source.
      */
-    private static String buildAnnotationValue(List<SpecificFieldNode> keptFields) {
+    private static String buildAnnotationValue(List<String> keptFieldSources) {
         StringBuilder sb = new StringBuilder(" {");
         boolean first = true;
-        for (SpecificFieldNode field : keptFields) {
-            if (field == null) {
-                continue;
-            }
+        for (String fieldSource : keptFieldSources) {
             if (!first) {
                 sb.append(",");
             }
-            sb.append(NEW_LINE).append(DOC_INDENT).append(field.toSourceCode().trim());
+            sb.append(NEW_LINE).append(DOC_INDENT).append(fieldSource);
             first = false;
         }
         sb.append(NEW_LINE).append("}");
