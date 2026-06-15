@@ -1,7 +1,7 @@
 import ballerina/ai;
 
 isolated class MathTutorAgent {
-    *ai:FixedReturnAgent;
+    *ai:FixedReturnAgentType;
 
     private final ai:Agent agent;
 

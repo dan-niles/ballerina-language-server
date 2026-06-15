@@ -435,7 +435,7 @@ public class CodeAnalyzer extends NodeVisitor {
         ExpressionNode expressionNode = remoteMethodCallActionNode.expression();
         MethodSymbol functionSymbol = (MethodSymbol) symbol.get();
         ClassSymbol classSymbol = optClassSymbol.get();
-        // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgent, so this ordering matters.
+        // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgentType, so this ordering matters.
         if (isAgentClass(classSymbol)) {
             startNode(NodeKind.AGENT_CALL, expressionNode.parent());
             populateAgentMetaData(expressionNode, classSymbol);
@@ -1767,7 +1767,7 @@ public class CodeAnalyzer extends NodeVisitor {
     }
 
     private NodeKind resolveNodeKind(ClassSymbol classSymbol) {
-        // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgent, so this ordering matters.
+        // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgentType, so this ordering matters.
         if (isAgentClass(classSymbol)) {
             return NodeKind.AGENT;
         }
@@ -2129,7 +2129,7 @@ public class CodeAnalyzer extends NodeVisitor {
         NameReferenceNode nameReferenceNode = methodCallExpressionNode.methodName();
         String functionName = getIdentifierName(nameReferenceNode);
         ClassSymbol classSymbol = optClassSymbol.get();
-        // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgent, so this ordering matters.
+        // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgentType, so this ordering matters.
         if (isAgentClass(classSymbol)) {
             startNode(NodeKind.AGENT_CALL, expressionNode.parent());
             populateAgentMetaData(expressionNode, classSymbol);
@@ -2199,7 +2199,7 @@ public class CodeAnalyzer extends NodeVisitor {
                         .orElse(false)) {
             startNode(NodeKind.DATA_MAPPER_CALL, functionCallExpressionNode.parent());
         } else if (isAgentClass(symbol.get())) {
-            // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgent, so this ordering matters.
+            // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgentType, so this ordering matters.
             startNode(NodeKind.AGENT_CALL, functionCallExpressionNode.parent());
         } else if (isAiFixedReturnAgent(symbol.get()) || isAiInferredReturnAgent(symbol.get())) {
             startNode(NodeKind.AGENT_RUN, functionCallExpressionNode.parent());

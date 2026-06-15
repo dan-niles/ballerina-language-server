@@ -32,7 +32,7 @@ import java.nio.file.Path;
 
 /**
  * Represents the declaration of a user-defined agent class that includes
- * {@code *ai:FixedReturnAgent} or {@code *ai:InferredReturnAgent}.
+ * {@code *ai:FixedReturnAgentType} or {@code *ai:InferredReturnAgentType}.
  * <p>
  * Distinct from {@link AgentBuilder}, which is reserved for the built-in
  * {@code ai:Agent} whose constructor exposes {@code systemPrompt}/{@code tools}/

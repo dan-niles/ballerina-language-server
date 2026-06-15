@@ -506,7 +506,7 @@ public class AvailableNodesGenerator {
     private Optional<Category> getAgent(Symbol symbol) {
         return getCategory(symbol, classSymbol -> {
             try {
-                // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgent.
+                // Nominal check first: ai:Agent itself satisfies *ai:InferredReturnAgentType.
                 return isAgentClass(classSymbol)
                         || isAiFixedReturnAgent(classSymbol)
                         || isAiInferredReturnAgent(classSymbol);

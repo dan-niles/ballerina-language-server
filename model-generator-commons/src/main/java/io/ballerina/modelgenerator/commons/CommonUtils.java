@@ -125,8 +125,8 @@ public class CommonUtils {
     private static final String MEMORY_TYPE_NAME = "Memory";
     private static final String ST_MEMORY_STORE_TYPE_NAME = "ShortTermMemoryStore";
     private static final String MCP_BASE_TOOL_KIT_TYPE_NAME = "McpBaseToolKit";
-    private static final String FIXED_RETURN_AGENT_TYPE_NAME = "FixedReturnAgent";
-    private static final String INFERRED_RETURN_AGENT_TYPE_NAME = "InferredReturnAgent";
+    private static final String FIXED_RETURN_AGENT_TYPE_NAME = "FixedReturnAgentType";
+    private static final String INFERRED_RETURN_AGENT_TYPE_NAME = "InferredReturnAgentType";
     public static final String BALLERINA_ORG_NAME = "ballerina";
     public static final String BALLERINAX_ORG_NAME = "ballerinax";
     public static final String LANG_LIB_PREFIX = "lang.";
@@ -1557,7 +1557,7 @@ public class CommonUtils {
      * @return the extracted default value as a string
      */
     public static String resolveDefaultValue(Symbol paramSymbol, TypeSymbol typeSymbol,
-                                                    SemanticModel semanticModel, Package resolvedPackage) {
+                                             SemanticModel semanticModel, Package resolvedPackage) {
         return resolveDefaultValue(paramSymbol, typeSymbol, semanticModel, resolvedPackage, null);
     }
 
@@ -1573,7 +1573,7 @@ public class CommonUtils {
      * @return the extracted default value as a string
      */
     public static String resolveDefaultValue(Symbol paramSymbol, TypeSymbol typeSymbol,
-                                                    SemanticModel semanticModel, Package resolvedPackage,
+                                             SemanticModel semanticModel, Package resolvedPackage,
                                              Document document) {
         String defaultValue = DefaultValueGeneratorUtil.getDefaultValueForType(typeSymbol);
 
@@ -1611,7 +1611,7 @@ public class CommonUtils {
                     semanticModel, document);
             return enumValue != null ? enumValue :
                     qualifiedNameReferenceNode.modulePrefix().text() + ":" + qualifiedNameReferenceNode.identifier()
-                    .text();
+                            .text();
         } else {
             return expression.toSourceCode();
         }

@@ -75,6 +75,8 @@ public class CommonUtils {
     private static final String DATA_LOADER_TYPE_NAME = "DataLoader";
     private static final String FIXED_RETURN_AGENT_TYPE_NAME = "FixedReturnAgent";
     private static final String INFERRED_RETURN_AGENT_TYPE_NAME = "InferredReturnAgent";
+    private static final String FIXED_RETURN_AGENT_TYPE_NAME = "FixedReturnAgentType";
+    private static final String INFERRED_RETURN_AGENT_TYPE_NAME = "InferredReturnAgentType";
 
     private static final String WSO2_MODEL_PROVIDER = "Wso2ModelProvider";
     private static final String WSO2_EMBEDDING_PROVIDER = "Wso2EmbeddingProvider";

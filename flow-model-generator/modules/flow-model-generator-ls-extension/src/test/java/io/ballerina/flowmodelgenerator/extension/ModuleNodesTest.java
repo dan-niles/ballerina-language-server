@@ -67,7 +67,7 @@ public class ModuleNodesTest extends AbstractLSTest {
     protected String[] skipList() {
         return new String[]{
                 "new_agent_model.json",
-                // TODO: Capture expected snapshot for the custom *ai:FixedReturnAgent fixture.
+                // TODO: Capture expected snapshot for the custom *ai:FixedReturnAgentType fixture.
                 "agent_type.json"
         };
     }

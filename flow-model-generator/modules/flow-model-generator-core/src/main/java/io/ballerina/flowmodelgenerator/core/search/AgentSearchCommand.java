@@ -87,7 +87,7 @@ public class AgentSearchCommand extends SearchCommand {
     private static final String SOURCE_LOCAL = "local";
 
     // Agent type checking constants
-    private static final Set<String> AGENT_TYPE_NAMES = Set.of("BaseAgent", "FixedReturnAgent");
+    private static final Set<String> AGENT_TYPE_NAMES = Set.of("BaseAgent", "FixedReturnAgentType");
     private static final String BALLERINA_ORG = "ballerina";
     private static final String BALLERINAX_ORG = "ballerinax";
     private static final String AI_MODULE = "ai";
@@ -388,7 +388,7 @@ public class AgentSearchCommand extends SearchCommand {
     }
 
     /**
-     * Checks if a class symbol includes an agent type (BaseAgent or FixedReturnAgent) from the
+     * Checks if a class symbol includes an agent type (BaseAgent or FixedReturnAgentType) from the
      * ballerina/ai or ballerinax/ai module.
      *
      * @param classSymbol the class symbol to check
