@@ -608,7 +608,7 @@
             "optional": false,
             "editable": true,
             "advanced": false,
-            "hidden": true,
+            "hidden": false,
             "codedata": {
               "kind": "INCLUDED_FIELD",
               "originalName": "model"

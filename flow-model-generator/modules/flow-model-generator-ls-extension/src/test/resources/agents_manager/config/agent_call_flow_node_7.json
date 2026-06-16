@@ -325,7 +325,7 @@
           "maxIter": {
             "metadata": {
               "label": "Maximum Iterations",
-              "description": "The maximum number of iterations the agent performs to complete the task.\nDefaults to `max(number of tools, 10)` — i.e., at least 10, or more if the\nagent has more tools available."
+              "description": "The maximum number of iterations the agent performs to complete the task.\nDefaults to `max(number of tools, 10)` \u2014 i.e., at least 10, or more if the\nagent has more tools available."
             },
             "types": [
               {
@@ -906,7 +906,7 @@
             "optional": false,
             "editable": true,
             "advanced": false,
-            "hidden": true,
+            "hidden": false,
             "codedata": {
               "kind": "INCLUDED_FIELD",
               "originalName": "model"
@@ -1009,7 +1009,7 @@
           "maxIter": {
             "metadata": {
               "label": "Maximum Iterations",
-              "description": "The maximum number of iterations the agent performs to complete the task.\nDefaults to `max(number of tools, 10)` — i.e., at least 10, or more if the\nagent has more tools available."
+              "description": "The maximum number of iterations the agent performs to complete the task.\nDefaults to `max(number of tools, 10)` \u2014 i.e., at least 10, or more if the\nagent has more tools available."
             },
             "types": [
               {

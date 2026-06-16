@@ -93,7 +93,7 @@
         "optional": false,
         "editable": true,
         "advanced": false,
-        "hidden": true,
+        "hidden": false,
         "codedata": {
           "kind": "INCLUDED_FIELD",
           "originalName": "model"
@@ -295,8 +295,8 @@
       },
       "variable": {
         "metadata": {
-          "label": "Result",
-          "description": "Name of the result variable"
+          "label": "Agent Name",
+          "description": "Name of the agent"
         },
         "types": [
           {

@@ -51,11 +51,11 @@ public class AgentBuilder extends CallBuilder {
     public static final String DESCRIPTION = "Create new agent";
     public static final String BALLERINA = "ballerina";
 
-    // Config fields hidden from the AGENT node form because they are configured separately: the model provider is
-    // auto-wired, tools are managed via the tools panel, and memory via the memory manager. The raw systemPrompt
-    // record is also hidden in favour of the friendly Role + Instructions fields. Mirrors AGENT_CALL's hiding.
+    // Config fields hidden from the AGENT node form because they are configured separately: tools are managed via
+    // the tools panel, memory via the memory manager, and the raw systemPrompt record is hidden in favour of the
+    // friendly Role + Instructions fields. The model field is visible and rendered as a connection select.
     public static final Set<String> CONFIG_PARAMS_TO_HIDE =
-            Set.of(AgentCallBuilder.SYSTEM_PROMPT, MODEL, TOOLS, AgentCallBuilder.MEMORY);
+            Set.of(AgentCallBuilder.SYSTEM_PROMPT, TOOLS, AgentCallBuilder.MEMORY);
 
     @Override
     protected NodeKind getFunctionNodeKind() {
@@ -116,18 +116,19 @@ public class AgentBuilder extends CallBuilder {
         super.setConcreteTemplateData(context);
         properties().scope(Property.GLOBAL_SCOPE);
 
-        metadata().addData(PARAMS_TO_HIDE, List.of(MODEL, TOOLS, TYPE));
-
-        // Hide the separately-configured fields and expose friendly Role + Instructions instead of the raw
-        // systemPrompt record (mirrors AGENT_CALL).
+        metadata().addData(PARAMS_TO_HIDE, List.of(TOOLS, TYPE));
         hideAgentConfigProperties(this);
-        // Role + Instructions are required on the AGENT node (they back the systemPrompt record, and no other
-        // configuration field is visible).
         AgentCallBuilder.setAdditionalAgentProperties(this, null, false);
     }
 
+    @Override
+    protected void setReturnTypeProperties(FunctionData functionData, TemplateContext context,
+                                           String label, String doc, boolean hidden) {
+        super.setReturnTypeProperties(functionData, context, "Agent Name", "Name of the agent", hidden);
+    }
+
     /**
-     * Marks the separately-configured agent fields ({@link #CONFIG_PARAMS_TO_HIDE}) as hidden on the given builder,
+     * Marks the agent fields that are managed outside the form ({@link #CONFIG_PARAMS_TO_HIDE}) as hidden,
      * preserving their existing values. Used for both the AGENT template and analyzed AGENT nodes.
      */
     public static void hideAgentConfigProperties(NodeBuilder nodeBuilder) {
