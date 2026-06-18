@@ -441,6 +441,7 @@ public class CodeAnalyzer extends NodeVisitor {
             populateAgentMetaData(expressionNode, classSymbol);
         } else if (isAiFixedReturnAgent(classSymbol) || isAiInferredReturnAgent(classSymbol)) {
             startNode(NodeKind.AGENT_RUN, expressionNode.parent());
+            populateAgentRunMetaData(expressionNode, classSymbol);
         } else {
             startNode(NodeKind.REMOTE_ACTION_CALL, expressionNode.parent());
         }
@@ -509,6 +510,48 @@ public class CodeAnalyzer extends NodeVisitor {
                                 true));
             }
         }
+    }
+
+    // Stamps read-only display metadata (system prompt / tools / model) onto a custom agent's AGENT_RUN node by
+    // resolving its declaration's constructor (for the model value) and reading the @ai:AgentMetadata annotation or,
+    // as a fallback, the agent class body. Mirrors populateAgentMetaData but for custom (non-built-in) agents.
+    private void populateAgentRunMetaData(ExpressionNode expressionNode, ClassSymbol classSymbol) {
+        SeparatedNodeList<FunctionArgumentNode> argumentNodes = getAgentInstanceNewExpr(expressionNode)
+                .flatMap(ImplicitNewExpressionNode::parenthesizedArgList)
+                .map(ParenthesizedArgList::arguments)
+                .orElse(null);
+        AiUtils.applyAgentRunMetadata(nodeBuilder, classSymbol, argumentNodes, project, this::getModelIconUrl);
+    }
+
+    // Resolves the agent instance's `new` expression from the `.run()` receiver — either a class field
+    // (`self.agent`) initialized in `init`, or a variable whose declaration holds the `new` expression.
+    private Optional<ImplicitNewExpressionNode> getAgentInstanceNewExpr(ExpressionNode expressionNode) {
+        if (isClassField(expressionNode)) {
+            FieldAccessExpressionNode fieldAccess = (FieldAccessExpressionNode) expressionNode;
+            Optional<Symbol> fieldSymbol = semanticModel.symbol(fieldAccess.fieldName());
+            if (fieldSymbol.isEmpty() || fieldSymbol.get().kind() != SymbolKind.CLASS_FIELD) {
+                return Optional.empty();
+            }
+            return findFieldInitAssignment(fieldSymbol.get()).flatMap(assign -> getNewExpr(assign.expression()));
+        }
+        Optional<Symbol> symbol = semanticModel.symbol(expressionNode);
+        if (symbol.isEmpty() || !(symbol.get() instanceof VariableSymbol variableSymbol)) {
+            return Optional.empty();
+        }
+        Optional<Location> optLocation = variableSymbol.getLocation();
+        if (optLocation.isEmpty()) {
+            return Optional.empty();
+        }
+        Document document = CommonUtils.getDocument(project, optLocation.get());
+        if (document == null) {
+            return Optional.empty();
+        }
+        Optional<NonTerminalNode> varNodeOpt = CommonUtil.findNode(variableSymbol, document.syntaxTree());
+        if (varNodeOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        ExpressionNode initializerExpr = getInitializerFromVariableNode(varNodeOpt.get());
+        return initializerExpr == null ? Optional.empty() : getNewExpr(initializerExpr);
     }
 
     private ExpressionNode getInitializerFromVariableNode(NonTerminalNode varNode) {
@@ -2135,6 +2178,7 @@ public class CodeAnalyzer extends NodeVisitor {
             populateAgentMetaData(expressionNode, classSymbol);
         } else if (isAiFixedReturnAgent(classSymbol) || isAiInferredReturnAgent(classSymbol)) {
             startNode(NodeKind.AGENT_RUN, expressionNode.parent());
+            populateAgentRunMetaData(expressionNode, classSymbol);
         } else if (isAiKnowledgeBase(classSymbol)) {
             startNode(NodeKind.KNOWLEDGE_BASE_CALL, expressionNode.parent());
         } else {
@@ -2418,7 +2462,7 @@ public class CodeAnalyzer extends NodeVisitor {
             FieldAccessExpressionNode fieldAccessExpressionNode = (FieldAccessExpressionNode) expressionNode;
             return getModelIconUrl(fieldAccessExpressionNode.fieldName());
         }
-        return null;
+        return new ModelData(expressionNode.toSourceCode().strip(), null, null);
     }
 
     // Resolves a custom-agent (AGENT_TYPE) memory init argument to the memory metadata shown on the node. Mirrors the
