@@ -26,7 +26,6 @@ import io.ballerina.centralconnector.response.DependentPackage;
 import io.ballerina.compiler.api.ModuleID;
 import io.ballerina.compiler.api.SemanticModel;
 import io.ballerina.compiler.api.symbols.AnnotationAttachmentSymbol;
-import io.ballerina.compiler.api.symbols.AnnotationSymbol;
 import io.ballerina.compiler.api.symbols.ClassSymbol;
 import io.ballerina.compiler.api.symbols.Documentation;
 import io.ballerina.compiler.api.symbols.FunctionTypeSymbol;
@@ -1262,11 +1261,11 @@ public class AiUtils {
     private static final String MEMORY_METADATA_KEY = "memory";
     private static final String MEMORY_INTERFACE_NAME = "Memory";
     private static final String INIT_METHOD_NAME = "init";
-    // The ballerina/ai @AgentMetadata annotation a compiler plugin attaches to custom agent classes; carries the
-    // tools, system prompt, and the init param names that supply the model provider / memory.
-    private static final String AGENT_METADATA_ANNOT = "AgentMetadata";
+    // The ai compiler plugin records a custom agent's metadata (tools, system prompt, and the init param names that
+    // supply the model provider / memory) under the `agentMetadata` field of the class's @display annotation.
+    private static final String AGENT_METADATA_FIELD = "agentMetadata";
     // The @ai:AgentTool annotation (workspace fallback: marks an agent's tool methods) + the @display annotation
-    // that carries each tool's UI label / icon.
+    // that carries each tool's UI label / icon (and, on the class, the agentMetadata field above).
     private static final String AGENT_TOOL_ANNOT = "AgentTool";
     private static final String DISPLAY_ANNOT = "display";
     private static final String DISPLAY_LABEL = "label";
@@ -1379,9 +1378,10 @@ public class AiUtils {
     }
 
     /**
-     * A custom agent's metadata, resolved from a single source: the {@code @ai:AgentMetadata} annotation when present
-     * (works for both workspace and Central agents), else — for workspace agents only — semantic inspection of the
-     * agent class. A Central dependency without the annotation resolves to {@link #EMPTY} (its class body is never
+     * A custom agent's metadata, resolved from a single source: the {@code agentMetadata} field of the class's
+     * {@code @display} annotation when present (works for both workspace and Central agents), else — for workspace
+     * agents only — semantic inspection of the agent class. A Central dependency without the annotation resolves to
+     * {@link #EMPTY} (its class body is never
      * read). The model/memory params are the {@code init} params that supply each dependency; the actual value/icon
      * is resolved separately from the declaration's arguments.
      *
@@ -1590,26 +1590,18 @@ public class AiUtils {
     private record DisplayInfo(String label, String icon) {
     }
 
-    // Reads the @ai:AgentMetadata annotation off the class into an AgentInfo (semantic API, so it resolves cross-repo
-    // for Central agents). Empty when the annotation is absent or malformed.
+    // Reads the agent metadata the ai compiler plugin records under the `agentMetadata` field of the class's @display
+    // annotation into an AgentInfo (semantic API, so it resolves cross-repo for Central agents). Empty when there is
+    // no @display annotation carrying an `agentMetadata` field (e.g. a class with no plugin-recorded metadata).
     private static Optional<AgentInfo> readAgentMetadata(ClassSymbol classSymbol) {
         for (AnnotationAttachmentSymbol annot : classSymbol.annotAttachments()) {
-            AnnotationSymbol annotType = annot.typeDescriptor();
-            if (!annotType.nameEquals(AGENT_METADATA_ANNOT)) {
+            if (!annot.typeDescriptor().nameEquals(DISPLAY_ANNOT) || annot.attachmentValue().isEmpty()
+                    || !(unwrapConstant(annot.attachmentValue().get()) instanceof Map<?, ?> displayMap)) {
                 continue;
             }
-            boolean fromAi = annotType.getModule()
-                    .map(ModuleSymbol::id)
-                    .filter(id -> CommonUtils.isAiModule(id.orgName(), id.packageName()))
-                    .isPresent();
-            if (!fromAi) {
-                continue;
-            }
-            Optional<ConstantValue> valueOpt = annot.attachmentValue();
-            if (valueOpt.isPresent() && unwrapConstant(valueOpt.get()) instanceof Map<?, ?> root) {
+            if (unwrapConstant(displayMap.get(AGENT_METADATA_FIELD)) instanceof Map<?, ?> root) {
                 return Optional.of(buildAgentInfo(classSymbol, root));
             }
-            return Optional.empty();
         }
         return Optional.empty();
     }

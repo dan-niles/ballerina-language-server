@@ -513,8 +513,9 @@ public class CodeAnalyzer extends NodeVisitor {
     }
 
     // Stamps read-only display metadata (system prompt / tools / model) onto a custom agent's AGENT_RUN node by
-    // resolving its declaration's constructor (for the model value) and reading the @ai:AgentMetadata annotation or,
-    // as a fallback, the agent class body. Mirrors populateAgentMetaData but for custom (non-built-in) agents.
+    // resolving its declaration's constructor (for the model value) and reading the agentMetadata field of the
+    // class's @display annotation or, as a fallback, the agent class body. Mirrors populateAgentMetaData but for
+    // custom (non-built-in) agents.
     private void populateAgentRunMetaData(ExpressionNode expressionNode, ClassSymbol classSymbol) {
         SeparatedNodeList<FunctionArgumentNode> argumentNodes = getAgentInstanceNewExpr(expressionNode)
                 .flatMap(ImplicitNewExpressionNode::parenthesizedArgList)
