@@ -253,6 +253,8 @@ public class CodeAnalyzer extends NodeVisitor {
     public static final String ICON_PATH = CommonUtils.generateIcon(BALLERINA_ORG_NAME, "mcp", "0.4.2");
     public static final String MCP_TOOL_KIT = "McpToolKit";
     public static final String MCP_SERVER = "MCP Server";
+    public static final String AGENT_TOOL_TYPE = "Agent";
+    private static final String RUN_METHOD = "run";
     public static final String NAME = "name";
     private static final String DATA_MAPPINGS_BAL = "data_mappings.bal";
 
@@ -683,7 +685,8 @@ public class CodeAnalyzer extends NodeVisitor {
                     toolsData.add(new ToolData(toolName, ICON_PATH, getToolDescription(""), MCP_SERVER));
                 } else {
                     toolName = simpleNameReferenceNode.name().text();
-                    toolsData.add(new ToolData(toolName, getIcon(toolName), getToolDescription(toolName), null));
+                    String toolType = isAgentDelegationTool(symbol) ? AGENT_TOOL_TYPE : null;
+                    toolsData.add(new ToolData(toolName, getIcon(toolName), getToolDescription(toolName), toolType));
                 }
             }
             nodeBuilder.metadata().addData("tools", toolsData);
@@ -3004,6 +3007,44 @@ public class CodeAnalyzer extends NodeVisitor {
         }
 
         return "";
+    }
+
+    // True when the tool function's body delegates to another agent's run() — i.e. an agent-as-tool wrapper.
+    private boolean isAgentDelegationTool(Symbol functionSymbol) {
+        Optional<Location> location = functionSymbol.getLocation();
+        if (location.isEmpty()) {
+            return false;
+        }
+        Document document = CommonUtils.getDocument(project, location.get());
+        if (document == null) {
+            return false;
+        }
+        NonTerminalNode node = ((ModulePartNode) document.syntaxTree().rootNode())
+                .findNode(location.get().textRange());
+        while (node != null && !(node instanceof FunctionDefinitionNode)) {
+            node = node.parent();
+        }
+        return node instanceof FunctionDefinitionNode funcDef && delegatesToAgentRun(funcDef.functionBody());
+    }
+
+    private boolean delegatesToAgentRun(Node node) {
+        if (!(node instanceof NonTerminalNode nonTerminal)) {
+            return false;
+        }
+        if (node instanceof MethodCallExpressionNode methodCall
+                && methodCall.methodName().toString().trim().equals(RUN_METHOD)) {
+            Optional<TypeSymbol> receiverType = semanticModel.typeOf(methodCall.expression());
+            if (receiverType.isPresent() && CommonUtils.getRawType(receiverType.get()) instanceof ClassSymbol cls
+                    && (isAgentClass(cls) || isAiFixedReturnAgent(cls) || isAiInferredReturnAgent(cls))) {
+                return true;
+            }
+        }
+        for (Node child : nonTerminal.children()) {
+            if (delegatesToAgentRun(child)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Optional<ImplicitNewExpressionNode> getNewExpr(ExpressionNode expressionNode) {

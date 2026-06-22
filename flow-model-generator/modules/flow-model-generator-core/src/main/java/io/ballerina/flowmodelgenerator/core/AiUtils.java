@@ -1282,7 +1282,6 @@ public class AiUtils {
     private static final String PARAMETER_NAME_FIELD = "parameterName";
     private static final String TOOL_NAME_FIELD = "name";
     private static final String TOOL_KIND_FIELD = "kind";
-    private static final String TOOL_LABEL_FIELD = "label";
     private static final String TOOL_ICON_FIELD = "icon";
     private static final String MCP_TOOLKIT_KIND = "MCP_TOOLKIT";
     // Mirrors CodeAnalyzer's tool convention so the frontend renders MCP toolkits like the built-in agent does.
@@ -1563,8 +1562,7 @@ public class AiUtils {
                 continue;
             }
             DisplayInfo display = readDisplayAnnotation(method);
-            String label = display.label() != null ? display.label() : name.get();
-            tools.add(new AgentToolData(label, display.icon(), null, null));
+            tools.add(new AgentToolData(name.get(), display.icon(), null, null));
         }
         return tools;
     }
@@ -1656,17 +1654,15 @@ public class AiUtils {
         return null;
     }
 
-    // Maps a ToolMetadata record onto the frontend's tool convention: name = label (or name), MCP toolkits carry the
-    // "MCP Server" type + the ballerina/mcp icon, function tools carry their @display icon (frontend falls back to
-    // the bi-function glyph when the icon path doesn't resolve).
+    // Maps a ToolMetadata record onto the frontend's tool convention: name = the tool name (the @display label is
+    // ignored), MCP toolkits carry the "MCP Server" type + the ballerina/mcp icon, function tools carry their
+    // @display icon (frontend falls back to the bi-function glyph when the icon path doesn't resolve).
     private static AgentToolData parseToolMetadata(Map<?, ?> toolMap) {
         Object nameVal = unwrapConstant(toolMap.get(TOOL_NAME_FIELD));
         if (nameVal == null || nameVal.toString().isBlank()) {
             return null;
         }
-        Object labelVal = unwrapConstant(toolMap.get(TOOL_LABEL_FIELD));
-        String displayName = labelVal != null && !labelVal.toString().isBlank()
-                ? labelVal.toString() : nameVal.toString();
+        String displayName = nameVal.toString();
 
         Object kindVal = unwrapConstant(toolMap.get(TOOL_KIND_FIELD));
         boolean isMcp = kindVal != null && MCP_TOOLKIT_KIND.equals(kindVal.toString());
