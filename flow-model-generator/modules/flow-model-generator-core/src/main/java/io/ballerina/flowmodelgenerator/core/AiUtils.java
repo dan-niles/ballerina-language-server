@@ -1319,6 +1319,7 @@ public class AiUtils {
         markClientConnectionParams(nodeBuilder, classSymbol);
 
         AgentInfo info = resolveAgentInfo(classSymbol, project);
+        addSystemPromptMetadata(nodeBuilder, info.systemPrompt());
         if (info.modelParam() != null) {
             applyWiredParam(nodeBuilder, argumentNodes, info.modelParam(), MODEL_PROVIDER_PARAM_KEY,
                     MODEL_METADATA_KEY, modelIconResolver);
@@ -1350,18 +1351,7 @@ public class AiUtils {
         getCustomAgentDescription(classSymbol)
                 .ifPresent(description -> nodeBuilder.metadata().addData(AGENT_DESCRIPTION_KEY, description));
 
-        if (info.systemPrompt() != null) {
-            Map<String, String> agentData = new HashMap<>();
-            if (info.systemPrompt().role() != null) {
-                agentData.put(SYSTEM_PROMPT_ROLE, info.systemPrompt().role());
-            }
-            if (info.systemPrompt().instructions() != null) {
-                agentData.put(SYSTEM_PROMPT_INSTRUCTIONS, info.systemPrompt().instructions());
-            }
-            if (!agentData.isEmpty()) {
-                nodeBuilder.metadata().addData(AGENT_DATA_KEY, agentData);
-            }
-        }
+        addSystemPromptMetadata(nodeBuilder, info.systemPrompt());
         if (!info.tools().isEmpty()) {
             nodeBuilder.metadata().addData(TOOLS_METADATA_KEY, info.tools());
         }
@@ -1373,6 +1363,24 @@ public class AiUtils {
                     nodeBuilder.metadata().addData(MODEL_METADATA_KEY, resolved);
                 }
             }
+        }
+    }
+
+    // Stamps the agent's role/instructions (NodeMetadata.agent) when available, shared by the AGENT_TYPE and AGENT_RUN
+    // paths. No-op when the system prompt is absent.
+    private static void addSystemPromptMetadata(NodeBuilder nodeBuilder, SystemPromptData systemPrompt) {
+        if (systemPrompt == null) {
+            return;
+        }
+        Map<String, String> agentData = new HashMap<>();
+        if (systemPrompt.role() != null) {
+            agentData.put(SYSTEM_PROMPT_ROLE, systemPrompt.role());
+        }
+        if (systemPrompt.instructions() != null) {
+            agentData.put(SYSTEM_PROMPT_INSTRUCTIONS, systemPrompt.instructions());
+        }
+        if (!agentData.isEmpty()) {
+            nodeBuilder.metadata().addData(AGENT_DATA_KEY, agentData);
         }
     }
 
