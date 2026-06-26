@@ -23,6 +23,6 @@ package io.ballerina.flowmodelgenerator.extension.request;
  *
  * @since 1.0.0
  */
-public record GenAgentToolRequest(String filePath, String agentVarName, boolean includeSessionId, String toolName,
+public record GenAgentToolRequest(String filePath, String agentVarName, boolean includeContext, String toolName,
                                   String description) {
 }

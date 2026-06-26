@@ -694,7 +694,7 @@ public class AgentsGenerator {
     /**
      * Generates an {@code @ai:AgentTool} wrapper that delegates to {@code agentVarName}'s {@code run} method.
      */
-    public JsonElement genAgentTool(String agentVarName, boolean includeSessionId, String toolName,
+    public JsonElement genAgentTool(String agentVarName, boolean includeContext, String toolName,
                                     String description, Path filePath, WorkspaceManager workspaceManager) {
         ModuleInfo hostModule = resolveHostModule(filePath, workspaceManager);
 
@@ -710,17 +710,16 @@ public class AgentsGenerator {
                 ? "Delegates a query to the " + agentVarName + " agent." : description;
         sourceBuilder.token().descriptionDoc(desc);
         sourceBuilder.token().parameterDoc("query", "The request to send to the " + agentVarName + " agent.");
-        if (includeSessionId) {
-            sourceBuilder.token().parameterDoc("sessionId",
-                    "Conversation handle. Generate a unique id to start a new conversation with the agent and " +
-                            "reuse the same id to continue it across turns. Omit for a one-off, stateless request.");
-        }
         sourceBuilder.token().returnDoc("The response from the " + agentVarName + " agent.");
+
+        // ai:Context is hidden from the LLM; passing it threads the caller's context to the delegated agent.
+        String paramList = includeContext ? "ai:Context context, string query" : "string query";
+        String runArgs = includeContext ? "query, context = context" : "query";
 
         sourceBuilder.token().name("@ai:AgentTool").name(System.lineSeparator());
         sourceBuilder.token().keyword(SyntaxKind.ISOLATED_KEYWORD).keyword(SyntaxKind.FUNCTION_KEYWORD);
         sourceBuilder.token().name(toolName).keyword(SyntaxKind.OPEN_PAREN_TOKEN);
-        sourceBuilder.token().name(includeSessionId ? "string query, string sessionId = \"\"" : "string query");
+        sourceBuilder.token().name(paramList);
         sourceBuilder.token().keyword(SyntaxKind.CLOSE_PAREN_TOKEN);
         sourceBuilder.token()
                 .keyword(SyntaxKind.RETURNS_KEYWORD)
@@ -731,16 +730,16 @@ public class AgentsGenerator {
         sourceBuilder.token().keyword(SyntaxKind.OPEN_BRACE_TOKEN);
         sourceBuilder.token()
                 .name(returnType)
-                .whiteSpace()
+                .keyword(SyntaxKind.PIPE_TOKEN)
+                .keyword(SyntaxKind.ERROR_KEYWORD)
                 .name("response")
                 .whiteSpace()
                 .keyword(SyntaxKind.EQUAL_TOKEN)
-                .keyword(SyntaxKind.CHECK_KEYWORD)
                 .name(agentVarName)
                 .keyword(SyntaxKind.DOT_TOKEN)
                 .name(RUN)
                 .keyword(SyntaxKind.OPEN_PAREN_TOKEN)
-                .name(includeSessionId ? "query, sessionId" : "query")
+                .name(runArgs)
                 .keyword(SyntaxKind.CLOSE_PAREN_TOKEN)
                 .endOfStatement();
         sourceBuilder.token()

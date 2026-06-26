@@ -329,7 +329,7 @@ public class AgentsManagerService implements ExtendedLanguageServerService {
                 }
 
                 AgentsGenerator agentsGenerator = new AgentsGenerator(semanticModel.get());
-                response.setTextEdits(agentsGenerator.genAgentTool(request.agentVarName(), request.includeSessionId(),
+                response.setTextEdits(agentsGenerator.genAgentTool(request.agentVarName(), request.includeContext(),
                         request.toolName(), request.description(), filePath, this.workspaceManager));
             } catch (Throwable e) {
                 throw new RuntimeException(e);
