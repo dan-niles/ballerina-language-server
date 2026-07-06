@@ -103,7 +103,11 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
 
         // Add return type if not present
         if (!newDoc.toString().contains(DOC_RETURN_PREFIX)) {
-            newDoc.append(NEW_LINE).append("    ").append(buildReturnTypeSection(returnType));
+            while (newDoc.length() > 0 && (newDoc.charAt(newDoc.length() - 1) == '\n'
+                    || newDoc.charAt(newDoc.length() - 1) == '\r')) {
+                newDoc.deleteCharAt(newDoc.length() - 1);
+            }
+            newDoc.append(NEW_LINE).append(buildReturnTypeSection(returnType));
         }
 
         edit.setNewText(newDoc.toString());
@@ -191,7 +195,7 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
 
         // Add return documentation before function signature if not present
         if (!result.contains(DOC_RETURN_PREFIX)) {
-            String returnDoc = "    " + buildReturnTypeSection(returnType) + "    ";
+            String returnDoc = buildReturnTypeSection(returnType) + "    ";
             result = result.replaceFirst(quote(remoteFunctionPattern),
                     quoteReplacement(returnDoc + remoteFunctionPattern));
         }
@@ -271,7 +275,7 @@ public class McpFunctionBuilder extends AbstractFunctionBuilder {
         }
 
         if (!doc.toString().contains(DOC_RETURN_PREFIX)) {
-            doc.append("    ").append(buildReturnTypeSection(returnType));
+            doc.append(buildReturnTypeSection(returnType));
         }
 
         return doc.toString();

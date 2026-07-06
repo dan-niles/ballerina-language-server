@@ -220,7 +220,7 @@
             "character": 4
           }
         },
-        "newText": "    # List books filtered by author\n    #\n        # + return - string\n"
+        "newText": "    # List books filtered by author\n    #\n    # + return - string\n"
       },
       {
         "range": {

@@ -220,7 +220,7 @@
             "character": 5
           }
         },
-        "newText": "# Delete a book from the bookstore by its ID\n    #\n        # + return - string|error\n"
+        "newText": "# Delete a book from the bookstore by its ID\n    #\n    # + return - string|error\n"
       },
       {
         "range": {
